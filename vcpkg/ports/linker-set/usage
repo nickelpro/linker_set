@@ -1,0 +1,7 @@
+The package linker-set provides CMake targets:
+
+    find_package(linker_set CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE linker_set::linker_set)
+
+    # For writeable, ICF-resistant linker sets
+    target_link_libraries(main_lto PRIVATE linker-set::linker_set_writeable)

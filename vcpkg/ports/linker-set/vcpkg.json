@@ -1,0 +1,18 @@
+{
+  "name": "linker-set",
+  "version": "1.0.0",
+  "port-version": 0,
+  "description": "A C++ linker set utility",
+  "homepage": "https://github.com/nickelpro/linker_set",
+  "license": "CC0-1.0",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "linker-set",
+  "version": "1.0.0",
+  "description": "A C++ linker set utility",
+  "homepage": "https://github.com/nickelpro/linker_set",
+  "maintainers": [
+    "Vito Gamberini <vito@gamberini.email>"
+  ],
+  "license": "CC0-1.0",
+  "dependencies": [
+    "catch2"
+  ],
+  "vcpkg-configuration": {
+    "default-registry": {
+      "kind": "git",
+      "baseline": "58bb6778689746b6a48c2ee4a2dfdb0b70f681df",
+      "repository": "https://github.com/microsoft/vcpkg.git"
+    }
+  }
+}
