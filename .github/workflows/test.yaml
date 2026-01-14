@@ -17,6 +17,9 @@ jobs:
       - name: Setup Developer Prompt
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Install Latest CMake
+        uses: ssrobins/install-cmake@v1
+
       - name: Restore vcpkg cache
         id: vcpkg-cache
         uses: TAServers/vcpkg-cache@v3
@@ -28,11 +31,13 @@ jobs:
           VCPKG_FEATURE_FLAGS: "binarycaching"
           VCPKG_BINARY_SOURCES: "clear;files,${{ steps.vcpkg-cache.outputs.path }},readwrite"
         run: |
-          cmake -G Ninja -B build      `
+          cmake -G Ninja -B build                      `
             --toolchain=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DVCPKG_BUILD_TYPE=release `
-            -DLINKER_SET_BUILD_TESTS=ON
+            -DCMAKE_BUILD_TYPE=Release                 `
+            -DLINKER_SET_BUILD_TESTS=ON                `
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON    `
+            -DCMAKE_CXX_FLAGS='/Zc:inline;/Gw'         `
+            -DCMAKE_EXE_LINKER_FLAGS=LINKER:/OPT:REF
           cmake --build build
 
       - name: Test
@@ -50,6 +55,9 @@ jobs:
       - name: Setup Developer Prompt
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Install Latest CMake
+        uses: ssrobins/install-cmake@v1
+
       - name: Restore vcpkg cache
         id: vcpkg-cache
         uses: TAServers/vcpkg-cache@v3
@@ -61,12 +69,14 @@ jobs:
           VCPKG_FEATURE_FLAGS: "binarycaching"
           VCPKG_BINARY_SOURCES: "clear;files,${{ steps.vcpkg-cache.outputs.path }},readwrite"
         run: |
-          cmake -G Ninja -B build         `
+          cmake -G Ninja -B build                      `
             --toolchain=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake `
-            -DCMAKE_CXX_COMPILER=clang-cl `
-            -DCMAKE_BUILD_TYPE=Release    `
-            -DVCPKG_BUILD_TYPE=release    `
-            -DLINKER_SET_BUILD_TESTS=ON
+            -DCMAKE_CXX_COMPILER=clang-cl              `
+            -DCMAKE_BUILD_TYPE=Release                 `
+            -DLINKER_SET_BUILD_TESTS=ON                `
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON    `
+            -DCMAKE_CXX_FLAGS='/Zc:inline;/Gw'         `
+            -DCMAKE_EXE_LINKER_FLAGS=LINKER:/OPT:REF
           cmake --build build
 
       - name: Test
@@ -97,11 +107,12 @@ jobs:
           VCPKG_FEATURE_FLAGS: "binarycaching"
           VCPKG_BINARY_SOURCES: "clear;files,${{ steps.vcpkg-cache.outputs.path }},readwrite"
         run: |
-          cmake -G Ninja -B build       \
+          cmake -G Ninja -B build                         \
             --toolchain=${VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake \
-            -DCMAKE_BUILD_TYPE=Release  \
-            -DVCPKG_BUILD_TYPE=release  \
-            -DLINKER_SET_BUILD_TESTS=ON
+            -DCMAKE_BUILD_TYPE=Release                    \
+            -DLINKER_SET_BUILD_TESTS=ON                   \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON       \
+            -DCMAKE_EXE_LINKER_FLAGS=LINKER:-dead_strip
           cmake --build build
 
       - name: Test
@@ -111,10 +122,16 @@ jobs:
   test_linux_gcc:
     name: Test on Linux (GCC)
     runs-on: ubuntu-latest
+    container: archlinux:base-devel
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          pacman --noconfirm -Syu
+          pacman --noconfirm -S ninja cmake git zip unzip
 
       - name: Restore vcpkg cache
         id: vcpkg-cache
@@ -127,12 +144,12 @@ jobs:
           VCPKG_FEATURE_FLAGS: "binarycaching"
           VCPKG_BINARY_SOURCES: "clear;files,${{ steps.vcpkg-cache.outputs.path }},readwrite"
         run: |
-          cmake -G Ninja -B build       \
-            --toolchain=${VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake \
-            -DCMAKE_CXX_COMPILER=g++-14 \
-            -DCMAKE_BUILD_TYPE=Release  \
-            -DVCPKG_BUILD_TYPE=release  \
-            -DLINKER_SET_BUILD_TESTS=ON
+          cmake -G Ninja -B build                           \
+            -DCMAKE_BUILD_TYPE=Release                      \
+            -DLINKER_SET_BOOTSTRAP_VCPKG=ON                 \
+            -DLINKER_SET_BUILD_TESTS=ON                     \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON         \
+            -DCMAKE_EXE_LINKER_FLAGS=LINKER:--gc-sections
           cmake --build build
 
       - name: Test
@@ -147,6 +164,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Latest CMake
+        uses: ssrobins/install-cmake@v1
+
       - name: Restore vcpkg cache
         id: vcpkg-cache
         uses: TAServers/vcpkg-cache@v3
@@ -158,12 +178,13 @@ jobs:
           VCPKG_FEATURE_FLAGS: "binarycaching"
           VCPKG_BINARY_SOURCES: "clear;files,${{ steps.vcpkg-cache.outputs.path }},readwrite"
         run: |
-          cmake -G Ninja -B build           \
+          cmake -G Ninja -B build                           \
             --toolchain=${VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake \
-            -DCMAKE_CXX_COMPILER=clang++-18 \
-            -DCMAKE_BUILD_TYPE=Release      \
-            -DVCPKG_BUILD_TYPE=release      \
-            -DLINKER_SET_BUILD_TESTS=ON
+            -DCMAKE_CXX_COMPILER=clang++-18                 \
+            -DCMAKE_BUILD_TYPE=Release                      \
+            -DLINKER_SET_BUILD_TESTS=ON                     \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON         \
+            -DCMAKE_EXE_LINKER_FLAGS=LINKER:--gc-sections
           cmake --build build
 
       - name: Test
