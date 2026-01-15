@@ -20,7 +20,8 @@
 // Build Options:
 //   - LS_LINKER_SET_WRITABLE (default OFF) : Make linker sets writable for the
 //   purpose of defeating variable ICF optimizations. Useful only for ensuring
-//   unique ADD entries which point to identical objects.
+//   unique ADD entries which point to identical objects. Rarely necessary,
+//   no tested toolchain or build mode requires it.
 //
 // Notes:
 // - No metadata is stored; the identifier exists only for linker coalescing.
@@ -155,10 +156,10 @@
 // DECLARE
 // Intened to be used in a header; required to be visible for SPAN
 //------------------------------------------------------------------------------
-// Note: Despite what informal documentation might imply, neither link.exe nor
+#if LS_PLATFORM_MSVC
+// Despite what informal documentation might imply, neither link.exe nor
 // lld-link will fold read-only data across different sections. The sentinels
 // are always safe from ICF.
-#if LS_PLATFORM_MSVC
 
 #define LINKER_SET_DECLARE(tag, T)                                             \
   __pragma(section(LS_MSVC_SEC(tag, a), LS_MSVC_SEC_PERMS));                   \
@@ -276,8 +277,10 @@
 
 
 #else // GCC
-// Note: GCC 15 implements top-level extended asm, but not with LTO streaming;
-// for this to work under -flto we need to wrap it in a function
+// GCC 15 implements top-level extended asm, but not with LTO streaming. Trying
+// to grab a symbol of an LTO variable in a top-level asm block causes a
+// compiler sorry. For this to work under -flto we need to wrap it in a
+// function.
 
 // clang-format off
 #define LINKER_SET_ADD_ID(tag, id, expr_lvalue)                                \
@@ -326,9 +329,11 @@
   LS_MSVC_TOUCH_INTERNAL_PTR(tag, id)
 
 #elif LS_PLATFORM_APPLE
-
 // Bafflingly, [[gnu::used]] is not enough to force instantiation on AppleClang,
-// so we pull the ol' static_assert trick; which is enough for some reason.
+// so we pull the ol' static_assert trick. Nominally this was fixed in D56928
+// (https://reviews.llvm.org/D56928), but testing shows it doesn't work on
+// modern XCode releases.
+
 #define LINKER_SET_ADD_MEMBER_ID(tag, id, expr_lvalue)                         \
   LS_STATIC_CHECK(expr_lvalue)                                                 \
   [[gnu::used]]                                                                \
