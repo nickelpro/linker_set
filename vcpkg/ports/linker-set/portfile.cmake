@@ -1,8 +1,8 @@
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO nickelpro/linker_set
-    REF 8fc85e3e94bc9b920f3688e203d6a855bab269fe
-    SHA512 45db2e3d2777b6cb86bc7571ec06a6931c526cf200ee3898cbe7e818f35b234e6594c5f04704b05cdb04a741c730d6a6486adde9e485e2a002b058f15c1ceee4
+    REF 9cfa3ee1f72a7953d244f47671be7282ad74337c
+    SHA512 64a39cd5ea42cdf52d8893ea9e3da36074049da7ff6013b18fe002ed176c8b0feac78000df278e953e8f379a7fe2ef0fe39236db0acb1bc2f14c4a1f344ec740
     HEAD_REF main
 )
 
@@ -13,7 +13,10 @@ vcpkg_cmake_configure(
 )
 
 vcpkg_cmake_install()
-vcpkg_cmake_config_fixup(CONFIG_PATH lib/cmake/linker_set)
+vcpkg_cmake_config_fixup(
+    PACKAGE_NAME linker_set
+    CONFIG_PATH lib/cmake/linker_set
+)
 
 file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug")
 

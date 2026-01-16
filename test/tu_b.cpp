@@ -1,6 +1,6 @@
 #include <linker_set.hpp>
 
-#include "autoreg.hpp"
+#include "util.hpp"
 
 static int add_b = 2;
 extern int add_c;
@@ -13,4 +13,10 @@ LINKER_SET_ADD(add_id, add_c)
 AutoReg<TagTypeB> autoreg_b;
 AutoReg<TagTypeC> autoreg_c_b;
 
-LINKER_SET_ADD(add_mixed, add_b);
+LINKER_SET_ADD(add_mixed, add_b)
+
+IndexEntry idx_b {
+    .v = add_b,
+    .idx = LINKER_SET_INDEX(add_mixed, add_b),
+};
+LINKER_SET_ADD(add_idx, idx_b)

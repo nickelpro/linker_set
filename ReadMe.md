@@ -41,13 +41,15 @@ for (auto p : LINKER_SET_SPAN(handlers)) {
 ```
 
 ## API
-- `LINKER_SET_DECLARE(tag, T)` - declare symbols for accessing set `tag` of
+- `LINKER_SET_DECLARE(tag, T)` - declare symbols for accessing set `tag`
                                  containing pointers to type `T`
 - `LINKER_SET_ADD_UNIQUE(tag, expr_lvalue)` - always-unique entry
 - `LINKER_SET_ADD_ID(tag, id, expr_lvalue)` - coalesce by `(tag, id)`
 - `LINKER_SET_ADD(tag, variable)` - convenience form of `ADD_ID`
 - `LINKER_SET_ADD_MEMBER_ID(tag, id, expr_lvalue)` - class-scope form
 - `LINKER_SET_ADD_MEMBER(tag, member)` - convenience form of `ADD_MEMBER_ID`
+- `LINKER_SET_INDEX(tag, id)` - index of entry in set
+- `LINKER_SET_INDEX_MEMBER(tag, id)` - class scope form
 - `LINKER_SET_SPAN(tag)` - `std::span<T const* const>` view of entries
 
 Notes:

@@ -15,7 +15,12 @@
 //    symbol identity; class-scope form
 //    - LINKER_SET_ADD_MEMBER(tag, member)             : convenience macro;
 //    same as LINKER_SET_ADD_MEMBER_ID(tag, member, member)
-// 3) Iterate with: LINKER_SET_SPAN(tag) -> std::span<T const* const>
+// 3) Optionally, retrieve the index inside the span with:
+//    - LINKER_SET_INDEX(tag, id)        : namespace scope
+//    - LINKER_SET_INDEX_MEMBER(tag, id) : class scope
+//    Must be called in the same scope as the LINKER_SET_ADD*. Not compatible
+//    with LINKER_SET_ADD_UNIQUE.
+// 4) Iterate with: LINKER_SET_SPAN(tag) -> std::span<T const* const>
 //
 // Build Options:
 //   - LS_LINKER_SET_WRITABLE (default OFF) : Make linker sets writable for the
@@ -34,6 +39,7 @@
 //     /OPT:REF.
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <type_traits>
 
@@ -68,12 +74,15 @@
 #if LS_LINKER_SET_WRITABLE
 #define LS_MSVC_SEC_PERMS read, write
 #define LS_APPLE_SEG "__DATA"
+#define LS_ELF_CONST
 #define LS_ELF_SLOT_DECL constinit auto const*
 #else
 #define LS_MSVC_SEC_PERMS read
 #define LS_APPLE_SEG "__DATA_CONST"
-#define LS_ELF_SLOT_DECL constinit auto const* const
+#define LS_ELF_CONST const
 #endif
+
+#define LS_ELF_SLOT_DECL constinit auto const* LS_ELF_CONST
 
 //------------------------------------------------------------------------------
 // GCC binds the STB_GNU_UNIQUE flag to inline variable symbols and relies on
@@ -131,10 +140,10 @@
 #if LS_PLATFORM_MSVC && !defined(__clang__)
 #define LS_MSVC_USED
 #define LS_MSVC_TOUCH(sym)                                                     \
-  ((void) *reinterpret_cast<unsigned char const volatile*>(sym), 0)
+  ((void) *reinterpret_cast<unsigned char const volatile*>(&(sym)), 0)
 #define LS_MSVC_TOUCH_LOCAL(sym)                                               \
   namespace {                                                                  \
-  int const LS_CAT2(ls_touch_u__, __COUNTER__) = LS_MSVC_TOUCH(&(sym));        \
+  int const LS_CAT2(ls_touch_u__, __COUNTER__) = LS_MSVC_TOUCH(sym);           \
   }
 #define LS_MSVC_TOUCH_INTERNAL_PTR(tag, id)                                    \
   static inline int const LS_CAT5(ls_touch_, tag, __, id, _internal__ptr) =    \
@@ -154,7 +163,7 @@
 
 //------------------------------------------------------------------------------
 // DECLARE
-// Intened to be used in a header; required to be visible for SPAN
+// Intened to be used in a header; required to be visible for all other macros
 //------------------------------------------------------------------------------
 #if LS_PLATFORM_MSVC
 // Despite what informal documentation might imply, neither link.exe nor
@@ -194,21 +203,33 @@
 
 #endif
 
-#define LS_STATIC_CHECK(expr_lvalue)                                           \
+#if LS_PLATFORM_MSVC
+#define LS_SET_SLOT_PTR_TYPE(tag) std::remove_cvref_t<decltype(ls_begin_##tag)>
+#elif LS_PLATFORM_APPLE
+#define LS_SET_SLOT_PTR_TYPE(tag)                                              \
+  std::remove_cvref_t<std::remove_extent_t<decltype(ls_start_##tag)>>
+#else // ELF
+#define LS_SET_SLOT_PTR_TYPE(tag)                                              \
+  std::remove_cvref_t<std::remove_extent_t<decltype(__start_ls_##tag)>>
+#endif
+
+#define LS_SET_OBJECT_TYPE(tag)                                                \
+  std::remove_cv_t<std::remove_pointer_t<LS_SET_SLOT_PTR_TYPE(tag)>>
+
+#define LS_EXPR_OBJECT_TYPE(expr_lvalue)                                       \
+  std::remove_cvref_t<decltype((expr_lvalue))>
+
+#define LS_STATIC_CHECK(tag, expr_lvalue)                                      \
   static_assert(std::is_lvalue_reference_v<decltype((expr_lvalue))>,           \
       "registry entry must be an lvalue expression");                          \
-  static_assert(                                                               \
-      std::is_object_v<std::remove_reference_t<decltype((expr_lvalue))>>,      \
-      "registry entry must be an object (not a function)");
+  static_assert(std::is_same_v<LS_EXPR_OBJECT_TYPE(expr_lvalue),               \
+                    LS_SET_OBJECT_TYPE(tag)>,                                  \
+      "registry entry type must exactly match LINKER_SET_DECLARE(tag, T)");
 
 //------------------------------------------------------------------------------
 // ADD_UNIQUE (non-coalescing; namespace-scope form)
 //------------------------------------------------------------------------------
-#if __INTELLISENSE__
-// Always hide slots from intellisense, these declarations are never useful for
-// completions
-#define LINKER_SET_ADD_UNIQUE(tag, expr_lvalue)
-#elif LS_PLATFORM_MSVC
+#if LS_PLATFORM_MSVC
 
 #define LS_MSVC_ADD_IMPL(tag, name, expr_lvalue)                               \
   namespace {                                                                  \
@@ -219,14 +240,14 @@
   }
 
 #define LINKER_SET_ADD_UNIQUE(tag, expr_lvalue)                                \
-  LS_STATIC_CHECK(expr_lvalue)                                                 \
+  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   __pragma(section(LS_MSVC_SEC(tag, m), LS_MSVC_SEC_PERMS));                   \
   LS_MSVC_ADD_IMPL(tag, LS_CAT2(ls_u__, __COUNTER__), expr_lvalue)
 
 #elif LS_PLATFORM_APPLE
 
 #define LINKER_SET_ADD_UNIQUE(tag, expr_lvalue)                                \
-  LS_STATIC_CHECK(expr_lvalue)                                                 \
+  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   namespace {                                                                  \
   [[gnu::used]] [[gnu::section(LS_APPLE_SEC(tag))]]                            \
   constinit auto const* const LS_CAT2(ls_u__, __COUNTER__) = &(expr_lvalue);   \
@@ -235,7 +256,7 @@
 #else // ELF
 
 #define LINKER_SET_ADD_UNIQUE(tag, expr_lvalue)                                \
-  LS_STATIC_CHECK(expr_lvalue)                                                 \
+  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   namespace {                                                                  \
   [[gnu::used]] [[gnu::retain]] [[gnu::section("ls_" #tag)]]                   \
   LS_ELF_SLOT_DECL LS_CAT2(ls_u__, __COUNTER__) = &(expr_lvalue);              \
@@ -246,12 +267,10 @@
 //------------------------------------------------------------------------------
 // ADD_ID (coalesced by symbol identity (tag,id); namespace-scope form)
 //------------------------------------------------------------------------------
-#if __INTELLISENSE__
-#define LINKER_SET_ADD_ID(tag, id, expr_lvalue)
-#elif LS_PLATFORM_MSVC
+#if LS_PLATFORM_MSVC
 
 #define LINKER_SET_ADD_ID(tag, id, expr_lvalue)                                \
-  LS_STATIC_CHECK(expr_lvalue)                                                 \
+  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   __pragma(section(LS_MSVC_SEC(tag, m), LS_MSVC_SEC_PERMS));                   \
   LS_MSVC_USED                                                                 \
   __declspec(allocate(LS_MSVC_SEC(tag, m))) inline auto const* const LS_CAT4(  \
@@ -261,7 +280,7 @@
 #elif LS_PLATFORM_APPLE
 
 #define LINKER_SET_ADD_ID(tag, id, expr_lvalue)                                \
-  LS_STATIC_CHECK(expr_lvalue)                                                 \
+  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   [[gnu::used]] [[gnu::section(LS_APPLE_SEC(tag))]]                            \
   inline constinit auto const* const LS_CAT4(ls_id_, tag, __, id) =            \
       &(expr_lvalue);
@@ -271,7 +290,7 @@
 #if defined(__clang__)
 
 #define LINKER_SET_ADD_ID(tag, id, expr_lvalue)                                \
-  LS_STATIC_CHECK(expr_lvalue)                                                 \
+  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   [[gnu::used]] [[gnu::retain]] [[gnu::section("ls_" #tag)]]                   \
   inline LS_ELF_SLOT_DECL LS_CAT4(ls_id_, tag, __, id) = &(expr_lvalue);
 
@@ -280,20 +299,27 @@
 // GCC 15 implements top-level extended asm, but not with LTO streaming. Trying
 // to grab a symbol of an LTO variable in a top-level asm block causes a
 // compiler sorry. For this to work under -flto we need to wrap it in a
-// function.
+// function. It should be obvious from the lack of parameters and void return
+// type, but calling these _emit functions will always cause a build failure.
 
 // clang-format off
 #define LINKER_SET_ADD_ID(tag, id, expr_lvalue)                                \
-  LS_STATIC_CHECK(expr_lvalue)                                                 \
+  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
+  extern std::remove_cvref_t<decltype(expr_lvalue)> const * LS_ELF_CONST       \
+      LS_CAT4(ls_id_, tag, __, id);                                            \
   [[gnu::used]]                                                                \
-  inline void LS_CAT5(ls_id_, tag, __, id, _f) () {                            \
-    __asm__ volatile (                                                         \
-      ".pushsection ls_" #tag "," LS_ASM_SECFLAGS ",@progbits,"                \
-      "ls_id_" #tag "__" #id ",comdat\n"                                       \
+  inline void LS_CAT5(ls_id_, tag, __, id, _emit)() {                          \
+    __asm__ __volatile__ (                                                     \
+      ".pushsection ls_" #tag "," LS_ASM_SECFLAGS ",@progbits,%c0,comdat\n"    \
       ".balign " LS_STR(__SIZEOF_POINTER__) "\n"                               \
-      "  " LS_ASM_PTR_DIRECTIVE " %c0\n"                                       \
+      ".globl %c0\n"                                                           \
+      ".type %c0,@object\n"                                                    \
+      ".size %c0," LS_STR(__SIZEOF_POINTER__) "\n"                             \
+      "%c0:\n"                                                                 \
+      "  " LS_ASM_PTR_DIRECTIVE " %c1\n"                                       \
       ".popsection\n"                                                          \
-      :: LS_ASM_INPUT_CONSTRAINT (&(expr_lvalue))                              \
+      :: LS_ASM_INPUT_CONSTRAINT (&(LS_CAT4(ls_id_, tag, __, id))),            \
+         LS_ASM_INPUT_CONSTRAINT (&(expr_lvalue))                              \
     );                                                                         \
   }
 // clang-format on
@@ -312,19 +338,17 @@
 // ADD_MEMBER_ID (coalesced by symbol identity (tag,id); class-scope form)
 // Intended primarily for templates: one entry per specialization
 //------------------------------------------------------------------------------
-#if __INTELLISENSE__
-#define LINKER_SET_ADD_MEMBER_ID(tag, id, expr_lvalue)
-#elif LS_PLATFORM_MSVC
+#if LS_PLATFORM_MSVC
 
 #define LINKER_SET_ADD_MEMBER_ID(tag, id, expr_lvalue)                         \
-  LS_STATIC_CHECK(expr_lvalue)                                                 \
+  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   __pragma(section(LS_MSVC_SEC(tag, m), LS_MSVC_SEC_PERMS));                   \
   LS_MSVC_USED                                                                 \
-  static auto LS_CAT5(ls_id_, tag, __, id, _f)() {                             \
+  static auto& LS_CAT5(ls_id_, tag, __, id, _f)() {                            \
     LS_MSVC_USED __declspec(allocate(LS_MSVC_SEC(tag,                          \
         m))) static constinit auto const* const ls_internal__ptr =             \
         &(expr_lvalue);                                                        \
-    return &ls_internal__ptr;                                                  \
+    return ls_internal__ptr;                                                   \
   }                                                                            \
   LS_MSVC_TOUCH_INTERNAL_PTR(tag, id)
 
@@ -335,11 +359,12 @@
 // modern XCode releases.
 
 #define LINKER_SET_ADD_MEMBER_ID(tag, id, expr_lvalue)                         \
-  LS_STATIC_CHECK(expr_lvalue)                                                 \
+  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   [[gnu::used]]                                                                \
-  static void LS_CAT5(ls_id_, tag, __, id, _f)() {                             \
+  static auto& LS_CAT5(ls_id_, tag, __, id, _f)() {                            \
     [[gnu::used]] [[gnu::section(LS_APPLE_SEC(tag))]]                          \
     static constinit auto const* const ls_internal__ptr = &(expr_lvalue);      \
+    return ls_internal__ptr;                                                   \
   }                                                                            \
   static_assert(LS_CAT5(ls_id_, tag, __, id, _f));
 
@@ -348,28 +373,38 @@
 #if defined(__clang__)
 
 #define LINKER_SET_ADD_MEMBER_ID(tag, id, expr_lvalue)                         \
-  LS_STATIC_CHECK(expr_lvalue)                                                 \
+  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   [[gnu::used]]                                                                \
-  static void LS_CAT5(ls_id_, tag, __, id, _f)() {                             \
+  static auto& LS_CAT5(ls_id_, tag, __, id, _f)() {                            \
     [[gnu::used]] [[gnu::retain]] [[gnu::section("ls_" #tag)]]                 \
     static LS_ELF_SLOT_DECL ls_internal__ptr = &(expr_lvalue);                 \
+    return ls_internal__ptr;                                                   \
   }
 
 #else // GCC
 
 // clang-format off
 #define LINKER_SET_ADD_MEMBER_ID(tag, id, expr_lvalue)                         \
-  LS_STATIC_CHECK(expr_lvalue)                                                 \
+  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
+  static std::remove_cvref_t<decltype((expr_lvalue))> const* const             \
+      LS_CAT4(ls_id_, tag, __, id);                                            \
   [[gnu::used]]                                                                \
-  static void LS_CAT5(ls_id_, tag, __, id, _f)() {                             \
+  static void LS_CAT5(ls_id_, tag, __, id, _emit)() {                          \
     __asm__ __volatile__(                                                      \
       ".pushsection ls_" #tag "," LS_ASM_SECFLAGS ",@progbits,%c0,comdat\n"    \
       ".balign " LS_STR(__SIZEOF_POINTER__) "\n"                               \
+      ".globl %c0\n"                                                           \
+      ".type %c0,@object\n"                                                    \
+      ".size %c0," LS_STR(__SIZEOF_POINTER__) "\n"                             \
+      "%c0:\n"                                                                 \
       "  " LS_ASM_PTR_DIRECTIVE " %c1\n"                                       \
       ".popsection\n"                                                          \
-      :: LS_ASM_INPUT_CONSTRAINT (LS_CAT5(ls_id_, tag, __, id, _f)),           \
+      :: LS_ASM_INPUT_CONSTRAINT (&(LS_CAT4(ls_id_, tag, __, id))),            \
          LS_ASM_INPUT_CONSTRAINT (&(expr_lvalue))                              \
     );                                                                         \
+  }                                                                            \
+  static auto& LS_CAT5(ls_id_, tag, __, id, _f)() {                            \
+    return LS_CAT4(ls_id_, tag, __, id);                                       \
   }
 // clang-format on
 
@@ -423,5 +458,49 @@
   }())
 
 #endif
+
+//------------------------------------------------------------------------------
+// INDEX
+//------------------------------------------------------------------------------
+
+#if LS_PLATFORM_MSVC
+
+#define LINKER_SET_INDEXER(tag)                                                \
+  ([](decltype(ls_begin_##tag)& entry) noexcept -> std::size_t {               \
+    auto b = reinterpret_cast<std::uintptr_t>(&ls_begin_##tag + 1);            \
+    auto e = reinterpret_cast<std::uintptr_t>(&entry);                         \
+    auto diff = e - b;                                                         \
+    return static_cast<std::size_t>(diff / sizeof(entry));                     \
+  })
+
+#elif LS_PLATFORM_APPLE
+
+#define LINKER_SET_INDEXER(tag)                                                \
+  ([](std::remove_extent_t<decltype(ls_start_##tag)>& entry) noexcept          \
+          -> std::size_t {                                                     \
+    auto b = reinterpret_cast<std::uintptr_t>(ls_start_##tag);                 \
+    auto e = reinterpret_cast<std::uintptr_t>(&entry);                         \
+    auto diff = e - b;                                                         \
+    return static_cast<std::size_t>(diff / sizeof(entry));                     \
+  })
+
+#else // ELF
+
+#define LINKER_SET_INDEXER(tag)                                                \
+  ([](std::remove_extent_t<decltype(__start_ls_##tag)>& entry) noexcept        \
+          -> std::size_t {                                                     \
+    auto b = reinterpret_cast<std::uintptr_t>(__start_ls_##tag);               \
+    auto e = reinterpret_cast<std::uintptr_t>(&entry);                         \
+    auto diff = e - b;                                                         \
+    return static_cast<std::size_t>(diff / sizeof(entry));                     \
+  })
+
+#endif
+
+#define LINKER_SET_INDEX(tag, id)                                              \
+  LINKER_SET_INDEXER(tag)(LS_CAT4(ls_id_, tag, __, id))
+
+#define LINKER_SET_INDEX_MEMBER(tag, id)                                       \
+  LINKER_SET_INDEXER(tag)(LS_CAT5(ls_id_, tag, __, id, _f)())
 
 #endif // LINKER_SET_HPP
