@@ -85,49 +85,6 @@
 #define LS_ELF_SLOT_DECL constinit auto const* LS_ELF_CONST
 
 //------------------------------------------------------------------------------
-// GCC binds the STB_GNU_UNIQUE flag to inline variable symbols and relies on
-// COMDAT folding to prevent collisions. However, custom-named sections are
-// never flagged for COMDAT folding under GCC, which causes symbol collisions.
-// We need inline asm in order to define our own section groups and associated
-// flags on GCC.
-//
-// clang uses weak symbols, no inline asm necessary.
-//------------------------------------------------------------------------------
-#if defined(__GNUC__)
-
-#if __SIZEOF_POINTER__ == 8
-#define LS_ASM_PTR_DIRECTIVE ".quad"
-#else
-#define LS_ASM_PTR_DIRECTIVE ".long"
-#endif
-
-#if LS_LINKER_SET_WRITABLE || defined(__PIC__)
-#define LS_ASM_SECFLAGS "\"awRG\""
-#else
-#define LS_ASM_SECFLAGS "\"aRG\""
-#endif
-
-// Picking the right input constraint for symbols is a nearly impossible
-// problem, see:
-// https://maskray.me/blog/2024-01-30-raw-symbol-names-in-inline-assembly
-
-#if __i386__ || __x86_64__
-#define LS_ASM_INPUT_CONSTRAINT "Ws"
-#elif __aarch64__
-#define LS_ASM_INPUT_CONSTRAINT "S"
-#elif __arm__
-#define LS_ASM_INPUT_CONSTRAINT "US"
-#else
-#define LS_ASM_INPUT_CONSTRAINT "s"
-#endif
-
-#else
-#define LS_ASM_PTR_DIRECTIVE
-#define LS_ASM_SECFLAGS
-#define LS_ASM_INPUT_CONSTRAINT
-#endif
-
-//------------------------------------------------------------------------------
 // clang-cl supports [[gnu::used]], which both emits and retains sections on
 // COFF; either by adding /INCLUDE to .drectve, or (for variables with internal
 // linkage and an explicit section) not marking sections as COMDAT.
@@ -287,44 +244,11 @@
 
 #else // ELF
 
-#if defined(__clang__)
-
 #define LINKER_SET_ADD_ID(tag, id, expr_lvalue)                                \
   LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   [[gnu::used]] [[gnu::retain]] [[gnu::section("ls_" #tag)]]                   \
   inline LS_ELF_SLOT_DECL LS_CAT4(ls_id_, tag, __, id) = &(expr_lvalue);
 
-
-#else // GCC
-// GCC 15 implements top-level extended asm, but not with LTO streaming. Trying
-// to grab a symbol of an LTO variable in a top-level asm block causes a
-// compiler sorry. For this to work under -flto we need to wrap it in a
-// function. It should be obvious from the lack of parameters and void return
-// type, but calling these _emit functions will always cause a build failure.
-
-// clang-format off
-#define LINKER_SET_ADD_ID(tag, id, expr_lvalue)                                \
-  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
-  extern std::remove_cvref_t<decltype(expr_lvalue)> const * LS_ELF_CONST       \
-      LS_CAT4(ls_id_, tag, __, id);                                            \
-  [[gnu::used]]                                                                \
-  inline void LS_CAT5(ls_id_, tag, __, id, _emit)() {                          \
-    __asm__ __volatile__ (                                                     \
-      ".pushsection ls_" #tag "," LS_ASM_SECFLAGS ",@progbits,%c0,comdat\n"    \
-      ".balign " LS_STR(__SIZEOF_POINTER__) "\n"                               \
-      ".globl %c0\n"                                                           \
-      ".type %c0,@object\n"                                                    \
-      ".size %c0," LS_STR(__SIZEOF_POINTER__) "\n"                             \
-      "%c0:\n"                                                                 \
-      "  " LS_ASM_PTR_DIRECTIVE " %c1\n"                                       \
-      ".popsection\n"                                                          \
-      :: LS_ASM_INPUT_CONSTRAINT (&(LS_CAT4(ls_id_, tag, __, id))),            \
-         LS_ASM_INPUT_CONSTRAINT (&(expr_lvalue))                              \
-    );                                                                         \
-  }
-// clang-format on
-
-#endif
 #endif
 
 //------------------------------------------------------------------------------
@@ -353,10 +277,9 @@
   LS_MSVC_TOUCH_INTERNAL_PTR(tag, id)
 
 #elif LS_PLATFORM_APPLE
-// Bafflingly, [[gnu::used]] is not enough to force instantiation on AppleClang,
-// so we pull the ol' static_assert trick. Nominally this was fixed in D56928
-// (https://reviews.llvm.org/D56928), but testing shows it doesn't work on
-// modern XCode releases.
+// [[gnu::used]] does not constitute an ODR use on AppleClang, it doesn't
+// instantiate the definition, so we pull the ol' static_assert trick. See
+// D56928 (https://reviews.llvm.org/D56928), and subsequent revert.
 
 #define LINKER_SET_ADD_MEMBER_ID(tag, id, expr_lvalue)                         \
   LS_STATIC_CHECK(tag, expr_lvalue)                                            \
@@ -370,8 +293,6 @@
 
 #else // ELF
 
-#if defined(__clang__)
-
 #define LINKER_SET_ADD_MEMBER_ID(tag, id, expr_lvalue)                         \
   LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   [[gnu::used]]                                                                \
@@ -381,34 +302,6 @@
     return ls_internal__ptr;                                                   \
   }
 
-#else // GCC
-
-// clang-format off
-#define LINKER_SET_ADD_MEMBER_ID(tag, id, expr_lvalue)                         \
-  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
-  static std::remove_cvref_t<decltype((expr_lvalue))> const* const             \
-      LS_CAT4(ls_id_, tag, __, id);                                            \
-  [[gnu::used]]                                                                \
-  static void LS_CAT5(ls_id_, tag, __, id, _emit)() {                          \
-    __asm__ __volatile__(                                                      \
-      ".pushsection ls_" #tag "," LS_ASM_SECFLAGS ",@progbits,%c0,comdat\n"    \
-      ".balign " LS_STR(__SIZEOF_POINTER__) "\n"                               \
-      ".globl %c0\n"                                                           \
-      ".type %c0,@object\n"                                                    \
-      ".size %c0," LS_STR(__SIZEOF_POINTER__) "\n"                             \
-      "%c0:\n"                                                                 \
-      "  " LS_ASM_PTR_DIRECTIVE " %c1\n"                                       \
-      ".popsection\n"                                                          \
-      :: LS_ASM_INPUT_CONSTRAINT (&(LS_CAT4(ls_id_, tag, __, id))),            \
-         LS_ASM_INPUT_CONSTRAINT (&(expr_lvalue))                              \
-    );                                                                         \
-  }                                                                            \
-  static auto& LS_CAT5(ls_id_, tag, __, id, _f)() {                            \
-    return LS_CAT4(ls_id_, tag, __, id);                                       \
-  }
-// clang-format on
-
-#endif
 #endif
 
 //------------------------------------------------------------------------------
