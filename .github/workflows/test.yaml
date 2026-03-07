@@ -122,16 +122,13 @@ jobs:
   test_linux_gcc:
     name: Test on Linux (GCC)
     runs-on: ubuntu-latest
-    container: archlinux:base-devel
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
-        run: |
-          pacman --noconfirm -Syu
-          pacman --noconfirm -S ninja cmake git zip unzip
+      - name: Install Latest CMake
+        uses: ssrobins/install-cmake@v1
 
       - name: Restore vcpkg cache
         id: vcpkg-cache
@@ -145,7 +142,9 @@ jobs:
           VCPKG_BINARY_SOURCES: "clear;files,${{ steps.vcpkg-cache.outputs.path }},readwrite"
         run: |
           cmake -G Ninja -B build                           \
+            --toolchain=${VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake \
             -DCMAKE_BUILD_TYPE=Release                      \
+            -DCMAKE_CXX_COMPILER=g++-14                     \
             -DLINKER_SET_BOOTSTRAP_VCPKG=ON                 \
             -DLINKER_SET_BUILD_TESTS=ON                     \
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON         \
