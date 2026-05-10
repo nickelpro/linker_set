@@ -75,7 +75,6 @@
 #define LS_MSVC_SEC_PERMS read, write
 #define LS_APPLE_SEG "__DATA"
 #define LS_ELF_CONST
-#define LS_ELF_SLOT_DECL constinit auto const*
 #else
 #define LS_MSVC_SEC_PERMS read
 #define LS_APPLE_SEG "__DATA_CONST"
