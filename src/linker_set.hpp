@@ -124,6 +124,105 @@
 #define LS_APPLE_STARTSYM(tag) "section$start$" LS_APPLE_SEG "$ls_" #tag
 #define LS_APPLE_ENDSYM(tag) "section$end$" LS_APPLE_SEG "$ls_" #tag
 
+// Most of this is straightforward inline ASM machinery, but the input
+// constraints are tricky, see:
+// https://maskray.me/blog/2024-01-30-raw-symbol-names-in-inline-assembly
+
+#if LS_LINKER_SET_WRITABLE || defined(__pic__) || defined(__pie__)
+#define LS_ELF_GCC_ASM_FLAGS "awR"
+#else
+#define LS_ELF_GCC_ASM_FLAGS "aR"
+#endif
+
+#if defined(__arm__)
+#define LS_ELF_GCC_PROGBITS "%progbits"
+#define LS_ELF_GCC_OBJECT "%object"
+#define LS_ELF_GCC_COMMENT "@"
+#define LS_ELF_GCC_INPUT_CONSTRAINT "US"
+
+#else
+
+#define LS_ELF_GCC_PROGBITS "@progbits"
+#define LS_ELF_GCC_OBJECT "@object"
+
+#if defined(__aarch64__)
+#define LS_ELF_GCC_COMMENT "//"
+#define LS_ELF_GCC_INPUT_CONSTRAINT "S"
+
+#else
+#define LS_ELF_GCC_COMMENT "#"
+
+#if defined(__i386__) || defined(__x86_64__)
+#define LS_ELF_GCC_INPUT_CONSTRAINT "Ws"
+#else
+#define LS_ELF_GCC_INPUT_CONSTRAINT "s"
+#endif
+
+#endif
+
+#endif
+
+//------------------------------------------------------------------------------
+// GCC is a real pain in the ass about section flags matching on non-LTO builds.
+// This creates a problem for linker sets which mix unique (ie ADD_UNIQUE) and
+// non-unique entries inside the same TU.
+//
+// We can solve this by hijacking the [[gnu::section]] attribute and injecting
+// our own section flags. Once hijacked, we can use the GCC assembler extension
+// "unique,<N>" to break out of the flag matching behavior.
+//
+// However, different GCC assembler backends have different syntax to perform
+// this hijacking, because nothing in life can be easy.
+//
+// Clang doesn't care about any of this and does the right thing.
+//------------------------------------------------------------------------------
+#if defined(__GNUC__) && !defined(__clang__)
+
+#define LS_ELF_UNIQUE_SEC(tag, n)                                              \
+  "ls_" #tag ",\"" LS_ELF_GCC_ASM_FLAGS "\"," LS_ELF_GCC_PROGBITS              \
+  ",unique," LS_STR(n) " " LS_ELF_GCC_COMMENT
+
+#else
+#define LS_ELF_UNIQUE_SEC(tag, n) "ls_" #tag
+#endif
+
+//------------------------------------------------------------------------------
+// In non-LTO builds, GCC will insanely group inline declarations into section
+// groups based on their section name, not their symbol name. The group
+// identifier is a random (first? last?) symbol from the section.
+//
+// This is pants-on-head compiler behavior and breaks all reasonable C++ code.
+// See: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=116184
+//
+// To work around this we create an otherwise pointless function to contain the
+// necessary inline asm to define a variable.
+//
+// Once again, clang simply does the right thing.
+//------------------------------------------------------------------------------
+
+// clang-format off
+#define LS_ELF_GCC_ASM(tag, id, expr_lvalue)                                   \
+  std::remove_cvref_t<decltype(expr_lvalue)> const * LS_ELF_CONST              \
+      LS_CAT4(ls_id_, tag, __, id);                                            \
+  [[gnu::used]]                                                                \
+  inline void LS_CAT5(ls_id_, tag, __, id, _emit)() {                          \
+    __asm__ __volatile__(                                                      \
+      ".pushsection ls_" #tag ",\"" LS_ELF_GCC_ASM_FLAGS "G\""                 \
+      "," LS_ELF_GCC_PROGBITS ",%c0,comdat\n"                                  \
+      ".balign " LS_STR(__SIZEOF_POINTER__) "\n"                               \
+      ".globl %c0\n"                                                           \
+      ".type %c0," LS_ELF_GCC_OBJECT "\n"                                      \
+      ".size %c0," LS_STR(__SIZEOF_POINTER__) "\n"                             \
+      "%c0:\n"                                                                 \
+      "  .dc.a %c1\n"                                                          \
+      ".popsection\n"                                                          \
+      :: LS_ELF_GCC_INPUT_CONSTRAINT (&(LS_CAT4(ls_id_, tag, __, id))),        \
+         LS_ELF_GCC_INPUT_CONSTRAINT (&(expr_lvalue))                          \
+    );                                                                         \
+  }
+// clang-format on
+
+
 //------------------------------------------------------------------------------
 // DECLARE
 // Intened to be used in a header; required to be visible for all other macros
@@ -218,12 +317,15 @@
 
 #else // ELF
 
-#define LINKER_SET_ADD_UNIQUE(tag, expr_lvalue)                                \
+#define LINKER_SET_ADD_UNIQUE_(tag, expr_lvalue, n)                            \
   LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   namespace {                                                                  \
-  [[gnu::used]] [[gnu::retain]] [[gnu::section("ls_" #tag)]]                   \
-  LS_ELF_SLOT_DECL LS_CAT2(ls_u__, __COUNTER__) = &(expr_lvalue);              \
+  [[gnu::used]] [[gnu::retain]] [[gnu::section(LS_ELF_UNIQUE_SEC(tag, n))]]    \
+  LS_ELF_SLOT_DECL LS_CAT2(ls_u__, n) = &(expr_lvalue);                        \
   }
+
+#define LINKER_SET_ADD_UNIQUE(tag, expr_lvalue)                                \
+  LINKER_SET_ADD_UNIQUE_(tag, expr_lvalue, __COUNTER__)
 
 #endif
 
@@ -250,10 +352,20 @@
 
 #else // ELF
 
+#if defined(__clang__)
+
 #define LINKER_SET_ADD_ID(tag, id, expr_lvalue)                                \
   LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   [[gnu::used]] [[gnu::retain]] [[gnu::section("ls_" #tag)]]                   \
   inline LS_ELF_SLOT_DECL LS_CAT4(ls_id_, tag, __, id) = &(expr_lvalue);
+
+#else // GCC
+
+#define LINKER_SET_ADD_ID(tag, id, expr_lvalue)                                \
+  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
+  extern LS_ELF_GCC_ASM(tag, id, expr_lvalue)
+
+#endif
 
 #endif
 
@@ -299,6 +411,8 @@
 
 #else // ELF
 
+#if defined(__clang__)
+
 #define LINKER_SET_ADD_MEMBER_ID(tag, id, expr_lvalue)                         \
   LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   [[gnu::used]]                                                                \
@@ -307,6 +421,19 @@
     static LS_ELF_SLOT_DECL ls_internal__ptr = &(expr_lvalue);                 \
     return ls_internal__ptr;                                                   \
   }
+
+#else // GCC
+
+// clang-format off
+#define LINKER_SET_ADD_MEMBER_ID(tag, id, expr_lvalue)                         \
+  LS_STATIC_CHECK(tag, expr_lvalue)                                            \
+  static LS_ELF_GCC_ASM(tag, id, expr_lvalue)                                  \
+  static auto& LS_CAT5(ls_id_, tag, __, id, _f)() {                            \
+    return LS_CAT4(ls_id_, tag, __, id);                                       \
+  }
+// clang-format on
+
+#endif
 
 #endif
 
