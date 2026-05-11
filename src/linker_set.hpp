@@ -24,9 +24,9 @@
 //
 // Build Options:
 //   - LS_LINKER_SET_WRITABLE (default OFF) : Make linker sets writable for the
-//   purpose of defeating variable ICF optimizations. Useful only for ensuring
-//   unique ADD entries which point to identical objects. Rarely necessary,
-//   no tested toolchain or build mode requires it.
+//   purpose of defeating constant folding and variable ICF optimizations.
+//   Rarely necessary, only GCC with -fmerge-all-constants has been shown to
+//   require it.
 //
 // Notes:
 // - No metadata is stored; the identifier exists only for linker coalescing.
@@ -63,13 +63,20 @@
 //------------------------------------------------------------------------------
 // Optional: make linker-set storage writable.
 //
-// Define LS_LINKER_SET_WRITABLE to place the linker set in writable sections.
-// This is useful if you want LINKER_SET_ADD_UNIQUE's "always-unique" slot
-// semantics to survive toolchains that can package data into COMDATs and apply
-// identical folding (e.g. MSVC /Gw /OPT:ICF, or LTO variable ICF).
+// Define LS_LINKER_SET_WRITABLE to defeat constant folding/variable ICF and
+// ensure linker sets are placed in writable sections.
 //
-// Note: You almost never want this on Apple, as no Mach-O backends support
-// variable ICF to begin with.
+// Constant folding and variable ICF can be tricky under two cases:
+//   * The direct case: two LINKER_SET_ADD_UNIQUE entries point to the same
+//     object, which makes them direct candidates for constant folding.
+//
+//   * The indirect case: two constant objects with individual entries in the
+//     linker set are merged, becoming identity-identical. The linker set
+//     entries for these objects are now candidates for ICF themselves.
+//
+// Testing has only shown the former to be possible under GCC with
+// -fmerge-all-constants. No tested linker will perform the latter under any
+// optimization conditions.
 //------------------------------------------------------------------------------
 #if LS_LINKER_SET_WRITABLE
 #define LS_MSVC_SEC_PERMS read, write

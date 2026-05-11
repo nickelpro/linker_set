@@ -81,8 +81,8 @@ target_link_libraries(app PRIVATE linker_set::linker_set_writeable)
 
 ## Options
 - `LS_LINKER_SET_WRITABLE=1` places linker sets in writable sections to defeat
-  variable ICF (possibly useful with LTO or MSVC /Gw /OPT:ICF). In practice
-  no tested toolchain requires this, but it's provided as a cautionary measure.
+  constant folding and variable ICF. In practice this is only necessary with
+  `-fmerge-all-constants` on GCC.
 
 ## Tests
 Tests require Catch2, it can be pulled it automatically with
