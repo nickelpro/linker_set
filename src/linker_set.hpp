@@ -162,6 +162,25 @@
 
 #endif
 
+// We could use the full GCC 15/16 support for top-level extended asm, and the
+// associated new input constraints ":" / "-s", but this comes with a host of
+// other problems:
+//   * In GCC 15, top-level extended asm did not support LTO at all
+//   * "-s" is never supported inside functions, which makes it worthless for
+//     the class / template member case.
+//   * The reference created by top-level extended asm does not preserve
+//     internal linkage variables, which are then culled by dead-code
+//     elimination.
+//
+// So we use ":" for defining variables where available and give up on the rest
+// for now.
+
+#if __GNUC__ >= 15
+#define LS_ELF_GCC_DEFINE_CONSTRAINT ":"
+#else
+#define LS_ELF_GCC_DEFINE_CONSTRAINT LS_ELF_GCC_INPUT_CONSTRAINT
+#endif
+
 // %cc works consistently across LTO and non-LTO builds, but is only available
 // in GCC 15+. %p works on older GCC builds, but is x86 only.
 
@@ -229,7 +248,7 @@
       "" LS_ELF_GCC_SYMPRINT(0) ":\n"                                          \
       "  .dc.a " LS_ELF_GCC_SYMPRINT(1) "\n"                                   \
       ".popsection\n"                                                          \
-      :: LS_ELF_GCC_INPUT_CONSTRAINT (&(LS_CAT4(ls_id_, tag, __, id))),        \
+      :: LS_ELF_GCC_DEFINE_CONSTRAINT (&(LS_CAT4(ls_id_, tag, __, id))),       \
          LS_ELF_GCC_INPUT_CONSTRAINT (&(expr_lvalue))                          \
     );                                                                         \
   }
