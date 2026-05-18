@@ -162,6 +162,19 @@
 
 #endif
 
+// %cc works consistently across LTO and non-LTO builds, but is only available
+// in GCC 15+. %p works on older GCC builds, but is x86 only.
+
+// clang-format off
+#if __GNUC__ >= 15
+#define LS_ELF_GCC_SYMPRINT(N) LS_STR(LS_CAT2(%cc, N))
+#elif defined(__i386__) || defined(__x86_64__)
+#define LS_ELF_GCC_SYMPRINT(N) LS_STR(LS_CAT2(%p, N))
+#else
+#define LS_ELF_GCC_SYMPRINT(N) LS_STR(LS_CAT2(%c, N))
+#endif
+// clang-format on
+
 //------------------------------------------------------------------------------
 // GCC is a real pain in the ass about section flags matching on non-LTO builds.
 // This creates a problem for linker sets which mix unique (ie ADD_UNIQUE) and
@@ -208,13 +221,13 @@
   inline void LS_CAT5(ls_id_, tag, __, id, _emit)() {                          \
     __asm__ __volatile__(                                                      \
       ".pushsection ls_" #tag ",\"" LS_ELF_GCC_ASM_FLAGS "G\""                 \
-      "," LS_ELF_GCC_PROGBITS ",%c0,comdat\n"                                  \
+      "," LS_ELF_GCC_PROGBITS "," LS_ELF_GCC_SYMPRINT(0) ",comdat\n"           \
       ".balign " LS_STR(__SIZEOF_POINTER__) "\n"                               \
-      ".globl %c0\n"                                                           \
-      ".type %c0," LS_ELF_GCC_OBJECT "\n"                                      \
-      ".size %c0," LS_STR(__SIZEOF_POINTER__) "\n"                             \
-      "%c0:\n"                                                                 \
-      "  .dc.a %c1\n"                                                          \
+      ".globl " LS_ELF_GCC_SYMPRINT(0) "\n"                                    \
+      ".type " LS_ELF_GCC_SYMPRINT(0) "," LS_ELF_GCC_OBJECT "\n"               \
+      ".size " LS_ELF_GCC_SYMPRINT(0) "," LS_STR(__SIZEOF_POINTER__) "\n"      \
+      "" LS_ELF_GCC_SYMPRINT(0) ":\n"                                          \
+      "  .dc.a " LS_ELF_GCC_SYMPRINT(1) "\n"                                   \
       ".popsection\n"                                                          \
       :: LS_ELF_GCC_INPUT_CONSTRAINT (&(LS_CAT4(ls_id_, tag, __, id))),        \
          LS_ELF_GCC_INPUT_CONSTRAINT (&(expr_lvalue))                          \
@@ -229,8 +242,8 @@
 //------------------------------------------------------------------------------
 #if LS_PLATFORM_MSVC
 // Despite what informal documentation might imply, neither link.exe nor
-// lld-link will fold read-only data across different sections. The sentinels
-// are always safe from ICF.
+// lld-link will fold read-only data across different input sections. The
+// sentinels are always safe from ICF.
 
 #define LINKER_SET_DECLARE(tag, T)                                             \
   __pragma(section(LS_MSVC_SEC(tag, a), LS_MSVC_SEC_PERMS));                   \
