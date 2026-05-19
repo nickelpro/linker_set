@@ -143,7 +143,6 @@
 #if defined(__arm__)
 #define LS_ELF_GCC_PROGBITS "%progbits"
 #define LS_ELF_GCC_OBJECT "%object"
-#define LS_ELF_GCC_COMMENT "@"
 #define LS_ELF_GCC_INPUT_CONSTRAINT "US"
 
 #else
@@ -152,18 +151,11 @@
 #define LS_ELF_GCC_OBJECT "@object"
 
 #if defined(__aarch64__)
-#define LS_ELF_GCC_COMMENT "//"
 #define LS_ELF_GCC_INPUT_CONSTRAINT "S"
-
-#else
-#define LS_ELF_GCC_COMMENT "#"
-
-#if defined(__i386__) || defined(__x86_64__)
+#elif defined(__i386__) || defined(__x86_64__)
 #define LS_ELF_GCC_INPUT_CONSTRAINT "Ws"
 #else
 #define LS_ELF_GCC_INPUT_CONSTRAINT "s"
-#endif
-
 #endif
 
 #endif
@@ -201,30 +193,9 @@
 // clang-format on
 
 //------------------------------------------------------------------------------
-// GCC is a real pain in the ass about section flags matching on non-LTO builds.
-// This creates a problem for linker sets which mix unique (ie ADD_UNIQUE) and
-// non-unique entries inside the same TU.
+// Two problems with GCC
 //
-// We can solve this by hijacking the [[gnu::section]] attribute and injecting
-// our own section flags. Once hijacked, we can use the GCC assembler extension
-// "unique,<N>" to break out of the flag matching behavior.
-//
-// However, different GCC assembler backends have different syntax to perform
-// this hijacking, because nothing in life can be easy.
-//
-// Clang doesn't care about any of this and does the right thing.
-//------------------------------------------------------------------------------
-#if defined(__GNUC__) && !defined(__clang__)
-
-#define LS_ELF_UNIQUE_SEC(tag, n)                                              \
-  "ls_" #tag ",\"" LS_ELF_GCC_ASM_FLAGS "\"," LS_ELF_GCC_PROGBITS              \
-  ",unique," LS_STR(n) " " LS_ELF_GCC_COMMENT
-
-#else
-#define LS_ELF_UNIQUE_SEC(tag, n) "ls_" #tag
-#endif
-
-//------------------------------------------------------------------------------
+// First:
 // In non-LTO builds, GCC will insanely group inline declarations into section
 // groups based on their section name, not their symbol name. The group
 // identifier is a random (first? last?) symbol from the section.
@@ -235,7 +206,27 @@
 // To work around this we create an otherwise pointless function to contain the
 // necessary inline asm to define a variable.
 //
-// Once again, clang simply does the right thing.
+//
+// Second:
+// GCC is a real pain in the ass about section flags matching on non-LTO builds.
+// This creates a problem for linker sets which mix unique (ie ADD_UNIQUE) and
+// non-unique entries inside the same TU.
+//
+// We could solve this by hijacking the [[gnu::section]] attribute and injecting
+// our own section flags (followed by a line comment to reject GCC's own
+// contribution). Once hijacked, we could use the GCC assembler extension
+// "unique,<N>" to break out of the flag matching behavior.
+//
+// However, we need to write inline asm for the non-unique entries anyway, so
+// we make those the unique section. We only need a single unique section for
+// all grouped variables, so we use "unique,0" for all non-unique entries.
+//
+// This is very confusing. The "unique" tells GCC to put the group flagged
+// variables (variables which can be coalesced across TUs) into their own
+// section header, which is a "unique" (read: distinct) section from the one
+// containing the non-group flagged variables which cannot be coalesced.
+//
+// Clang doesn't care about any of this and does the right thing.
 //------------------------------------------------------------------------------
 
 // clang-format off
@@ -246,7 +237,7 @@
   inline void LS_CAT5(ls_id_, tag, __, id, _emit)() {                          \
     __asm__ __volatile__(                                                      \
       ".pushsection ls_" #tag ",\"" LS_ELF_GCC_ASM_FLAGS "G\""                 \
-      "," LS_ELF_GCC_PROGBITS "," LS_ELF_GCC_SYMPRINT(0) ",comdat\n"           \
+      "," LS_ELF_GCC_PROGBITS "," LS_ELF_GCC_SYMPRINT(0) ",comdat,unique,0\n"  \
       ".balign " LS_STR(__SIZEOF_POINTER__) "\n"                               \
       ".globl " LS_ELF_GCC_SYMPRINT(0) "\n"                                    \
       ".type " LS_ELF_GCC_SYMPRINT(0) "," LS_ELF_GCC_OBJECT "\n"               \
@@ -355,15 +346,12 @@
 
 #else // ELF
 
-#define LINKER_SET_ADD_UNIQUE_(tag, expr_lvalue, n)                            \
+#define LINKER_SET_ADD_UNIQUE(tag, expr_lvalue)                                \
   LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   namespace {                                                                  \
-  [[gnu::used]] [[gnu::retain]] [[gnu::section(LS_ELF_UNIQUE_SEC(tag, n))]]    \
-  LS_ELF_SLOT_DECL LS_CAT2(ls_u__, n) = &(expr_lvalue);                        \
+  [[gnu::used]] [[gnu::retain]] [[gnu::section("ls_" #tag)]]                   \
+  LS_ELF_SLOT_DECL LS_CAT2(ls_u__, __COUNTER__) = &(expr_lvalue);              \
   }
-
-#define LINKER_SET_ADD_UNIQUE(tag, expr_lvalue)                                \
-  LINKER_SET_ADD_UNIQUE_(tag, expr_lvalue, __COUNTER__)
 
 #endif
 
