@@ -53,6 +53,7 @@ TEST_CASE("Mixed LINKER_SET_ADD*") {
 TEST_CASE("LINKER_SET_ADD_INDEX / MEMBER") {
   auto sp_mixed {LINKER_SET_SPAN(add_mixed)};
   auto sp_idx {LINKER_SET_SPAN(add_idx)};
+  REQUIRE(check_linker_set_size(sp_idx, 3));
   for(auto ptr : sp_idx) {
     if(!ptr)
       continue;
