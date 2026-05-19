@@ -160,9 +160,9 @@
 
 #endif
 
-// We could use the full GCC 15/16 support for top-level extended asm, and the
-// associated new input constraints ":" / "-s", but this comes with a host of
-// other problems:
+// We could use the full GCC 15/16 support for top-level extended asm, the
+// associated new input constraints ":" / "-s", and new generic operand
+// modifier "cc"; but this comes with a host of other problems:
 //   * In GCC 15, top-level extended asm did not support LTO at all
 //   * "-s" is never supported inside functions, which makes it worthless for
 //     the class / template member case.
@@ -170,25 +170,20 @@
 //     internal linkage variables, which are then culled by dead-code
 //     elimination.
 //
-// So we use ":" for defining variables where available and give up on the rest
-// for now.
-
-#if __GNUC__ >= 15
-#define LS_ELF_GCC_DEFINE_CONSTRAINT ":"
-#else
-#define LS_ELF_GCC_DEFINE_CONSTRAINT LS_ELF_GCC_INPUT_CONSTRAINT
-#endif
-
-// %cc works consistently across LTO and non-LTO builds, but is only available
-// in GCC 15+. %p works on older GCC builds, but is x86 only.
+// So, where available, we use ":" for defining variables, "cc" for printing,
+// and give up on the rest for now.
 
 // clang-format off
 #if __GNUC__ >= 15
+#define LS_ELF_GCC_DEFINE_CONSTRAINT ":"
 #define LS_ELF_GCC_SYMPRINT(N) LS_STR(LS_CAT2(%cc, N))
-#elif defined(__i386__) || defined(__x86_64__)
+#else
+#define LS_ELF_GCC_DEFINE_CONSTRAINT LS_ELF_GCC_INPUT_CONSTRAINT
+#if defined(__i386__) || defined(__x86_64__)
 #define LS_ELF_GCC_SYMPRINT(N) LS_STR(LS_CAT2(%p, N))
 #else
 #define LS_ELF_GCC_SYMPRINT(N) LS_STR(LS_CAT2(%c, N))
+#endif
 #endif
 // clang-format on
 
@@ -218,13 +213,20 @@
 // "unique,<N>" to break out of the flag matching behavior.
 //
 // However, we need to write inline asm for the non-unique entries anyway, so
-// we make those the unique section. We only need a single unique section for
-// all grouped variables, so we use "unique,0" for all non-unique entries.
+// we make those the unique section. We only need a single assembler section
+// instance for all grouped variables, so we use "unique,0" for all non-unique
+// entries.
 //
 // This is very confusing. The "unique" tells GCC to put the group flagged
 // variables (variables which can be coalesced across TUs) into their own
-// section header, which is a "unique" (read: distinct) section from the one
+// section instance, which is "unique" (read: distinct) instance from the one
 // containing the non-group flagged variables which cannot be coalesced.
+//
+// This doesn't mean all group flagged variables are in the same physical
+// section, as they have distinct section groups and will generate their own
+// section header entries. It means the assembler views them as belonging to a
+// single logical section, and all the constituent parts of that logical
+// section will have matching flags. This sparks joy in the GCC assembler.
 //
 // Clang doesn't care about any of this and does the right thing.
 //------------------------------------------------------------------------------
@@ -242,7 +244,7 @@
       ".globl " LS_ELF_GCC_SYMPRINT(0) "\n"                                    \
       ".type " LS_ELF_GCC_SYMPRINT(0) "," LS_ELF_GCC_OBJECT "\n"               \
       ".size " LS_ELF_GCC_SYMPRINT(0) "," LS_STR(__SIZEOF_POINTER__) "\n"      \
-      "" LS_ELF_GCC_SYMPRINT(0) ":\n"                                          \
+      LS_ELF_GCC_SYMPRINT(0) ":\n"                                             \
       "  .dc.a " LS_ELF_GCC_SYMPRINT(1) "\n"                                   \
       ".popsection\n"                                                          \
       :: LS_ELF_GCC_DEFINE_CONSTRAINT (&(LS_CAT4(ls_id_, tag, __, id))),       \
