@@ -12,6 +12,10 @@ option(LINKER_SET_BUILD_TESTS
   "Build linker set tests. Default: ${BUILD_TESTING}"
   ${BUILD_TESTING}
 )
+option(LINKER_SET_TEST_WRITABLE
+  "Run tests using the linker_set_writable target"
+  OFF
+)
 
 add_library(linker_set INTERFACE)
 target_sources(linker_set
@@ -22,18 +26,23 @@ target_sources(linker_set
       src/linker_set.hpp
 )
 
-add_library(linker_set_writeable INTERFACE)
-target_link_libraries(linker_set_writeable
+add_library(linker_set_writable INTERFACE)
+target_link_libraries(linker_set_writable
   INTERFACE
     linker_set
 )
-target_compile_definitions(linker_set_writeable
+target_compile_definitions(linker_set_writable
   INTERFACE
     LS_LINKER_SET_WRITABLE=1
 )
 
 if(LINKER_SET_BUILD_TESTS)
   find_package(Catch2 REQUIRED CONFIG)
+
+  set(ls_test_target linker_set)
+  if(LINKER_SET_TEST_WRITABLE)
+    set(ls_test_target linker_set_writable)
+  endif()
 
   add_executable(linker_set_tests)
   target_sources(linker_set_tests
@@ -48,7 +57,7 @@ if(LINKER_SET_BUILD_TESTS)
   )
   target_link_libraries(linker_set_tests
     PRIVATE
-      linker_set
+      ${ls_test_target}
       Catch2::Catch2WithMain
   )
   target_compile_features(linker_set_tests
@@ -64,7 +73,7 @@ endif()
 include(GNUInstallDirs)
 
 install(
-  TARGETS linker_set linker_set_writeable
+  TARGETS linker_set linker_set_writable
   EXPORT linker_set-targets
   FILE_SET HEADERS
 )

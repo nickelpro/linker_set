@@ -76,7 +76,7 @@ target_link_libraries(app PRIVATE linker_set::linker_set)
 
 For writable, ICF-resistant linker sets:
 ```cmake
-target_link_libraries(app PRIVATE linker_set::linker_set_writeable)
+target_link_libraries(app PRIVATE linker_set::linker_set_writable)
 ```
 
 ## Options
