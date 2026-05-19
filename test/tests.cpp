@@ -14,7 +14,8 @@ template <typename T>
 bool check_linker_set_size(std::span<T const* const> sp, std::size_t sz) {
   if(sp.size() == sz)
     return true;
-  return std::ranges::count_if(sp, [](auto i) { return i; }) == sz;
+  return std::ranges::count_if(sp, [](auto i) { return i; }) ==
+      static_cast<long long>(sz);
 }
 
 template <typename T, std::size_t N>
