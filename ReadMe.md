@@ -1,6 +1,6 @@
 # linker_set
 
-Header-only C++ macros for defining "linker sets": arrays of pointers that the
+Header-only C++20 macros for defining "linker sets": arrays of pointers that the
 linker gathers across translation units. This is handy for registries, allowing
 discovery without a central list.
 
