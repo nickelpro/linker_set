@@ -43,6 +43,12 @@
 #include <span>
 #include <type_traits>
 
+// Silence dumb warning in paranoid consumers
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wundef"
+#endif
+
 #if defined(_MSC_VER)
 #define LS_PLATFORM_MSVC 1
 #elif defined(__APPLE__)
@@ -560,5 +566,10 @@
 
 #define LINKER_SET_INDEX_MEMBER(tag, id)                                       \
   LINKER_SET_INDEXER(tag)(LS_CAT5(ls_id_, tag, __, id, _f)())
+
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 #endif // LINKER_SET_HPP
