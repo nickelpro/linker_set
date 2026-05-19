@@ -4,8 +4,13 @@ include(vcpkg/BootstrapVcpkg.cmake)
 
 project(linker_set LANGUAGES CXX VERSION 1.0.0)
 
-option(LINKER_SET_BUILD_TESTS ${BUILD_TESTING}
+if(NOT DEFINED BUILD_TESTING)
+  set(BUILD_TESTING ${PROJECT_IS_TOP_LEVEL})
+endif()
+
+option(LINKER_SET_BUILD_TESTS
   "Build linker set tests. Default: ${BUILD_TESTING}"
+  ${BUILD_TESTING}
 )
 
 add_library(linker_set INTERFACE)
