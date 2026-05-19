@@ -40,6 +40,13 @@ for (auto p : LINKER_SET_SPAN(handlers)) {
 }
 ```
 
+A slightly more involved example is available in the `example` folder, which
+illustrates a more typical usage of collecting metadata about template
+specializations used throughout a program.
+
+It can be built from the top-level CMake project with
+`-DLINKER_SET_BUILD_EXAMPLE=ON`.
+
 ## API
 - `LINKER_SET_DECLARE(tag, T)` - declare symbols for accessing set `tag`
                                  containing pointers to type `T`

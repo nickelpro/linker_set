@@ -13,7 +13,11 @@ option(LINKER_SET_BUILD_TESTS
   ${BUILD_TESTING}
 )
 option(LINKER_SET_TEST_WRITABLE
-  "Run tests using the linker_set_writable target"
+  "Run tests using the linker_set_writable target. Default: OFF"
+  OFF
+)
+option(LINKER_SET_BUILD_EXAMPLE
+  "Build the example. Default: OFF"
   OFF
 )
 
@@ -36,13 +40,13 @@ target_compile_definitions(linker_set_writable
     LS_LINKER_SET_WRITABLE=1
 )
 
+set(ls_test_target linker_set)
+if(LINKER_SET_TEST_WRITABLE)
+  set(ls_test_target linker_set_writable)
+endif()
+
 if(LINKER_SET_BUILD_TESTS)
   find_package(Catch2 REQUIRED CONFIG)
-
-  set(ls_test_target linker_set)
-  if(LINKER_SET_TEST_WRITABLE)
-    set(ls_test_target linker_set_writable)
-  endif()
 
   add_executable(linker_set_tests)
   target_sources(linker_set_tests
@@ -68,6 +72,28 @@ if(LINKER_SET_BUILD_TESTS)
   enable_testing()
   include(Catch)
   catch_discover_tests(linker_set_tests)
+endif()
+
+if(LINKER_SET_BUILD_EXAMPLE)
+  add_executable(linker_set_example)
+  target_sources(linker_set_example
+    PRIVATE
+      example/main.cpp
+      example/sedan.cpp
+      example/van.cpp
+
+    PRIVATE
+      FILE_SET HEADERS
+      BASE_DIRS example
+  )
+  target_link_libraries(linker_set_example
+    PRIVATE
+      ${ls_test_target}
+  )
+  target_compile_features(linker_set_example
+    PRIVATE
+      cxx_std_23
+  )
 endif()
 
 include(GNUInstallDirs)
