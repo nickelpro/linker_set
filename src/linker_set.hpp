@@ -24,7 +24,7 @@
 //
 // Build Options:
 //   - LS_LINKER_SET_WRITABLE (default OFF) : Make linker sets writable for the
-//   purpose of defeating constant folding and variable ICF optimizations.
+//   purpose of defeating constant merging and variable ICF optimizations.
 //   Rarely necessary, only GCC with -fmerge-all-constants has been shown to
 //   require it.
 //
@@ -69,12 +69,12 @@
 //------------------------------------------------------------------------------
 // Optional: make linker-set storage writable.
 //
-// Define LS_LINKER_SET_WRITABLE to defeat constant folding/variable ICF and
+// Define LS_LINKER_SET_WRITABLE to defeat constant merging/variable ICF and
 // ensure linker sets are placed in writable sections.
 //
-// Constant folding and variable ICF can be tricky under two cases:
+// Constant merging and variable ICF can be tricky under two cases:
 //   * The direct case: two LINKER_SET_ADD_UNIQUE entries point to the same
-//     object, which makes them direct candidates for constant folding.
+//     object, which makes them direct candidates for constant merging.
 //
 //   * The indirect case: two constant objects with individual entries in the
 //     linker set are merged, becoming identity-identical. The linker set

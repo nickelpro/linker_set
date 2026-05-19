@@ -11,7 +11,7 @@ version of MSVC which supports C++20.
 - No runtime registration or constructors required
 - Coalesced and non-coalesced insertion modes
 - Header-only, simple CMake targets
-- Optional writable sections to resist variable ICF
+- Optional writable sections to resist constant merging/variable ICF
 
 ## Quick Example
 ```cpp
@@ -81,7 +81,7 @@ target_link_libraries(app PRIVATE linker_set::linker_set_writable)
 
 ## Options
 - `LS_LINKER_SET_WRITABLE=1` places linker sets in writable sections to defeat
-  constant folding and variable ICF. In practice this is only necessary with
+  constant merging and variable ICF. In practice this is only necessary with
   `-fmerge-all-constants` on GCC.
 
 ## Tests
