@@ -42,7 +42,7 @@ jobs:
 
       - name: Test
         run: |
-          ctest --test-dir build
+          ctest --test-dir build --output-on-failure
 
   test_windows_clang:
     name: Test on Windows (clang-cl)
@@ -81,7 +81,7 @@ jobs:
 
       - name: Test
         run: |
-          ctest --test-dir build
+          ctest --test-dir build --output-on-failure
 
   test_macos:
     name: Test on MacOS
@@ -117,7 +117,7 @@ jobs:
 
       - name: Test
         run: |
-          ctest --test-dir build
+          ctest --test-dir build --output-on-failure
 
   test_linux_gcc:
     name: Test on Linux (GCC)
@@ -152,7 +152,7 @@ jobs:
 
       - name: Test
         run: |
-          ctest --test-dir build
+          ctest --test-dir build --output-on-failure
 
   test_linux_gcc_nolto:
     name: Test on Linux (GCC, No LTO, merge-constants)
@@ -188,7 +188,7 @@ jobs:
 
       - name: Test
         run: |
-          ctest --test-dir build
+          ctest --test-dir build --output-on-failure
 
   test_linux_clang:
     name: Test on Linux (clang)
@@ -224,4 +224,4 @@ jobs:
 
       - name: Test
         run: |
-          ctest --test-dir build
+          ctest --test-dir build --output-on-failure

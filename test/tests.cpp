@@ -2,7 +2,10 @@
 #include <array>
 #include <cstddef>
 #include <functional>
+#include <limits>
 #include <span>
+#include <stdexcept>
+#include <type_traits>
 
 #include <catch2/catch_test_macros.hpp>
 #include <linker_set.hpp>
@@ -11,51 +14,93 @@
 
 namespace rg = std::ranges;
 
-auto proj = [](auto p) { return p ? *p : 0; };
+static_assert(
+    std::is_same_v<decltype(LINKER_SET_GET(add_mixed, 0)), int const&>);
+static_assert(
+    std::is_same_v<decltype(LINKER_SET_AT(add_mixed, 0)), int const&>);
+static_assert(std::is_same_v<decltype(LINKER_SET_GET(add_mutable, 0)), int&>);
+static_assert(std::is_same_v<decltype(LINKER_SET_AT(add_mutable, 0)), int&>);
 
-template <typename T>
-bool check_linker_set_size(std::span<T const* const> sp, std::ptrdiff_t sz) {
-  return std::ssize(sp) == sz || rg::count_if(sp, std::identity {}) == sz;
-}
-
-template <typename T, std::size_t N>
-bool check_linker_set_contains(std::span<T const* const> sp,
-    std::array<T, N> arr) {
-  return rg::all_of(arr, [&](auto& el) { return rg::contains(sp, el, proj); });
+template <typename R, typename T, std::size_t N>
+bool check_linker_set_contains(R ls, std::array<T, N> arr) {
+  return rg::all_of(arr, [&](auto& el) { return rg::contains(ls, el); });
 }
 
 TEST_CASE("LINKER_SET_ADD_UNIQUE") {
-  auto sp {LINKER_SET_SPAN(add_unique)};
-  REQUIRE(check_linker_set_size(sp, 4));
-  REQUIRE(check_linker_set_contains(sp, std::array {1, 2, 3}));
-  REQUIRE(rg::count_if(sp, [](auto i) { return i == 3; }, proj) == 2);
+  auto ls {LINKER_SET_RANGE(add_unique)};
+  REQUIRE(rg::distance(ls) == 4);
+  REQUIRE(check_linker_set_contains(ls, std::array {1, 2, 3}));
+  REQUIRE(rg::count_if(ls, [](auto i) { return i == 3; }) == 2);
 }
 
 TEST_CASE("LINKER_SET_ADD") {
-  auto sp {LINKER_SET_SPAN(add_id)};
-  REQUIRE(check_linker_set_size(sp, 3));
-  REQUIRE(check_linker_set_contains(sp, std::array {1, 2, 3}));
+  auto ls {LINKER_SET_RANGE(add_id)};
+  REQUIRE(rg::distance(ls) == 3);
+  REQUIRE(check_linker_set_contains(ls, std::array {1, 2, 3}));
 }
 
 TEST_CASE("LINKER_SET_ADD_MEMBER") {
-  auto sp {LINKER_SET_SPAN(add_member)};
-  REQUIRE(check_linker_set_size(sp, 3));
-  REQUIRE(check_linker_set_contains(sp, std::array {1, 2, 3}));
+  auto ls {LINKER_SET_RANGE(add_member)};
+  REQUIRE(rg::distance(ls) == 3);
+  REQUIRE(check_linker_set_contains(ls, std::array {1, 2, 3}));
+}
+
+TEST_CASE("LINKER_SET_DECLARE_MUTABLE") {
+  auto ls {LINKER_SET_RANGE(add_mutable)};
+  auto ls_idx {LINKER_SET_RANGE(add_mut_idx)};
+  REQUIRE(rg::distance(ls) == 2);
+  REQUIRE(rg::distance(ls_idx) == 2);
+  REQUIRE(check_linker_set_contains(ls, std::array {10, 20}));
+
+  for(auto& value : ls)
+    value += 100;
+
+  REQUIRE(check_linker_set_contains(ls, std::array {110, 120}));
+
+  for(auto& value : ls)
+    value -= 100;
+
+  for(auto const& entry : ls_idx) {
+    auto& value = LINKER_SET_GET(add_mutable, entry.idx);
+    auto& checked_value = LINKER_SET_AT(add_mutable, entry.idx);
+
+    REQUIRE(value == entry.v);
+    REQUIRE(&value == &checked_value);
+
+    auto original = value;
+    checked_value += 7;
+    REQUIRE(value == original + 7);
+    checked_value = original;
+  }
+
+  REQUIRE(check_linker_set_contains(ls, std::array {10, 20}));
 }
 
 TEST_CASE("Mixed LINKER_SET_ADD*") {
-  auto sp {LINKER_SET_SPAN(add_mixed)};
-  REQUIRE(check_linker_set_size(sp, 4));
-  REQUIRE(check_linker_set_contains(sp, std::array {1, 2, 3, 4}));
+  auto ls {LINKER_SET_RANGE(add_mixed)};
+  REQUIRE(rg::distance(ls) == 4);
+  REQUIRE(check_linker_set_contains(ls, std::array {1, 2, 3, 4}));
 }
 
 TEST_CASE("LINKER_SET_ADD_INDEX / MEMBER") {
-  auto sp_mixed {LINKER_SET_SPAN(add_mixed)};
-  auto sp_idx {LINKER_SET_SPAN(add_idx)};
-  REQUIRE(check_linker_set_size(sp_idx, 3));
-  for(auto ptr : sp_idx) {
-    if(!ptr)
-      continue;
-    REQUIRE(ptr->v == *sp_mixed[ptr->idx]);
+  auto ls_idx {LINKER_SET_RANGE(add_idx)};
+  REQUIRE(rg::distance(ls_idx) == 3);
+  REQUIRE(rg::all_of(ls_idx, [](const auto& el) {
+    return el.v == LINKER_SET_GET(add_mixed, el.idx);
+  }));
+}
+
+TEST_CASE("LINKER_SET_GET / AT") {
+  auto ls_idx {LINKER_SET_RANGE(add_idx)};
+
+  for(auto const& entry : ls_idx) {
+    REQUIRE(LINKER_SET_GET(add_mixed, entry.idx) == entry.v);
+    REQUIRE(LINKER_SET_AT(add_mixed, entry.idx) == entry.v);
+    REQUIRE(&LINKER_SET_GET(add_mixed, entry.idx) ==
+        &LINKER_SET_AT(add_mixed, entry.idx));
   }
+
+  REQUIRE_THROWS_AS(
+      LINKER_SET_AT(add_mixed, std::numeric_limits<std::size_t>::max()),
+      std::out_of_range);
 }

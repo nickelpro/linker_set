@@ -27,16 +27,10 @@
 int main() {
 
   std::println("Specs of available vehicles:");
-  for(auto const& vh : LINKER_SET_SPAN(vehicle_specs)) {
-    if(!vh)
-      continue;
-    std::println("{}\n", *vh);
-  }
+  for(auto const& vh : LINKER_SET_RANGE(vehicle_specs))
+    std::println("{}\n", vh);
 
   std::println("Known drivers:");
-  for(auto const& dv : LINKER_SET_SPAN(drivers)) {
-    if(!dv)
-      continue;
-    std::println("{}", *dv);
-  }
+  for(auto const& dv : LINKER_SET_RANGE(drivers))
+    std::println("{}", dv);
 }

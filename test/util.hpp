@@ -9,6 +9,8 @@ LINKER_SET_DECLARE(add_unique, int)
 LINKER_SET_DECLARE(add_id, int)
 LINKER_SET_DECLARE(add_member, int)
 LINKER_SET_DECLARE(add_mixed, int)
+LINKER_SET_DECLARE_MUTABLE(add_mutable, int)
+LINKER_SET_DECLARE(add_mut_idx, IndexEntry)
 LINKER_SET_DECLARE(add_idx, IndexEntry)
 
 
