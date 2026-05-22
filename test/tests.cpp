@@ -18,8 +18,12 @@ static_assert(
     std::is_same_v<decltype(LINKER_SET_GET(add_mixed, 0)), int const&>);
 static_assert(
     std::is_same_v<decltype(LINKER_SET_AT(add_mixed, 0)), int const&>);
+static_assert(
+    std::is_same_v<decltype(LINKER_SET_SPAN(add_mixed)[0]), int const* const&>);
 static_assert(std::is_same_v<decltype(LINKER_SET_GET(add_mutable, 0)), int&>);
 static_assert(std::is_same_v<decltype(LINKER_SET_AT(add_mutable, 0)), int&>);
+static_assert(
+    std::is_same_v<decltype(LINKER_SET_SPAN(add_mutable)[0]), int* const&>);
 
 template <typename R, typename T, std::size_t N>
 bool check_linker_set_contains(R ls, std::array<T, N> arr) {

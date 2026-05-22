@@ -519,42 +519,14 @@
 // If iterating, must null check for holes on COFF
 //------------------------------------------------------------------------------
 
-#if LS_PLATFORM_MSVC
-
 #define LINKER_SET_SPAN(tag)                                                   \
-  ([]() noexcept -> std::span<decltype(ls_start_##tag)> {                      \
-    auto b = &ls_start_##tag + 1;                                              \
-    auto e = &ls_end_##tag;                                                    \
-    if(e < b)                                                                  \
+  ([]() noexcept -> std::span<LS_SET_SLOT_PTR_TYPE(tag) const> {               \
+    auto b = LS_BEGIN(tag);                                                    \
+    auto e = LS_END(tag);                                                      \
+    if(!b || e < b)                                                            \
       return {};                                                               \
     return {b, static_cast<std::size_t>(e - b)};                               \
   }())
-
-#elif LS_PLATFORM_APPLE
-
-#define LINKER_SET_SPAN(tag)                                                   \
-  ([]() noexcept                                                               \
-          -> std::span<std::remove_extent_t<decltype(ls_start_##tag)>> {       \
-    auto b = ls_start_##tag;                                                   \
-    auto e = ls_end_##tag;                                                     \
-    if(!b || !e || e < b)                                                      \
-      return {};                                                               \
-    return {b, static_cast<std::size_t>(e - b)};                               \
-  }())
-
-#else // ELF
-
-#define LINKER_SET_SPAN(tag)                                                   \
-  ([]() noexcept                                                               \
-          -> std::span<std::remove_extent_t<decltype(__start_ls_##tag)>> {     \
-    auto b = __start_ls_##tag;                                                 \
-    auto e = __stop_ls_##tag;                                                  \
-    if(!b || !e || e < b)                                                      \
-      return {};                                                               \
-    return {b, static_cast<std::size_t>(e - b)};                               \
-  }())
-
-#endif
 
 //------------------------------------------------------------------------------
 // INDEX
