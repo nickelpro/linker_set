@@ -103,15 +103,15 @@
 #define LS_APPLE_SEG "__DATA"
 
 #if LS_PLATFORM_ELF
-#define LS_PTR_CONST
+#define LS_SLOT_CONST
 #else
-#define LS_PTR_CONST const
+#define LS_SLOT_CONST const
 #endif
 
 #else
 #define LS_MSVC_SEC_PERMS read
 #define LS_APPLE_SEG "__DATA_CONST"
-#define LS_PTR_CONST const
+#define LS_SLOT_CONST const
 #endif
 
 //------------------------------------------------------------------------------
@@ -119,32 +119,34 @@
 //------------------------------------------------------------------------------
 
 #if LS_PLATFORM_MSVC
-#define LS_SET_SLOT_PTR_TYPE(tag) std::remove_cvref_t<decltype(ls_start_##tag)>
+#define LS_SLOT_TYPE(tag) decltype(ls_start_##tag)
 #define LS_BEGIN(tag) (&ls_start_##tag + 1)
 #define LS_END(tag) (&ls_end_##tag)
 #elif LS_PLATFORM_APPLE
-#define LS_SET_SLOT_PTR_TYPE(tag)                                              \
-  std::remove_cvref_t<std::remove_extent_t<decltype(ls_start_##tag)>>
+#define LS_SLOT_TYPE(tag) std::remove_extent_t<decltype(ls_start_##tag)>
 #define LS_BEGIN(tag) (ls_start_##tag)
 #define LS_END(tag) (ls_end_##tag)
 #else // ELF
-#define LS_SET_SLOT_PTR_TYPE(tag)                                              \
-  std::remove_cvref_t<std::remove_extent_t<decltype(__start_ls_##tag)>>
+#define LS_SLOT_TYPE(tag) std::remove_extent_t<decltype(__start_ls_##tag)>
 #define LS_BEGIN(tag) (__start_ls_##tag)
 #define LS_END(tag) (__stop_ls_##tag)
 #endif
 
-#define LS_SLOT_DEF(tag) constinit LS_SET_SLOT_PTR_TYPE(tag) LS_PTR_CONST
+// LS_SLOT_TYPE always returns the slot type as const, but the individual slot
+// declarations might not actually be const if LS_LINKER_SET_WRITABLE=1. We
+// still treat the slot type as const in all other contexts.
+#define LS_SLOT_DECL(tag)                                                      \
+  constinit std::remove_const_t<LS_SLOT_TYPE(tag)> LS_SLOT_CONST
 
 #define LS_STATIC_CHECK(tag, expr_lvalue)                                      \
   static_assert(std::is_lvalue_reference_v<decltype((expr_lvalue))>,           \
       "linker-set entry must be an lvalue expression");                        \
   static_assert(                                                               \
       std::is_same_v<std::remove_cvref_t<decltype((expr_lvalue))>,             \
-          std::remove_cv_t<std::remove_pointer_t<LS_SET_SLOT_PTR_TYPE(tag)>>>, \
+          std::remove_const_t<std::remove_pointer_t<LS_SLOT_TYPE(tag)>>>,      \
       "linker-set entry type must exactly match LINKER_SET_DECLARE(tag, T)");  \
-  static_assert(std::is_convertible_v<decltype(&(expr_lvalue)),                \
-                    LS_SET_SLOT_PTR_TYPE(tag)>,                                \
+  static_assert(                                                               \
+      std::is_convertible_v<decltype(&(expr_lvalue)), LS_SLOT_TYPE(tag)>,      \
       "linker-set entry cv-qualification is incompatible with this set");
 
 //------------------------------------------------------------------------------
@@ -285,7 +287,8 @@
 
 // clang-format off
 #define LS_ELF_GCC_ASM(tag, id, expr_lvalue)                                   \
-  LS_SET_SLOT_PTR_TYPE(tag) LS_PTR_CONST LS_CAT4(ls_id_, tag, __, id);         \
+  std::remove_const_t<LS_SLOT_TYPE(tag)> LS_SLOT_CONST                         \
+      LS_CAT4(ls_id_, tag, __, id);                                            \
   [[gnu::used]]                                                                \
   inline void LS_CAT5(ls_id_, tag, __, id, _emit)() {                          \
     __asm__ __volatile__(                                                      \
@@ -368,7 +371,7 @@
 #define LS_MSVC_ADD_IMPL(tag, name, expr_lvalue)                               \
   namespace {                                                                  \
   LS_MSVC_USED                                                                 \
-  __declspec(allocate(LS_MSVC_SEC(tag, m))) LS_SLOT_DEF(tag) name = &(         \
+  __declspec(allocate(LS_MSVC_SEC(tag, m))) LS_SLOT_DECL(tag) name = &(        \
       expr_lvalue);                                                            \
   LS_MSVC_TOUCH_LOCAL(name)                                                    \
   }
@@ -383,7 +386,7 @@
 #define LINKER_SET_ADD_UNIQUE(tag, expr_lvalue)                                \
   LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   namespace {                                                                  \
-  [[gnu::used]] [[gnu::section(LS_APPLE_SEC(tag))]] LS_SLOT_DEF(tag)           \
+  [[gnu::used]] [[gnu::section(LS_APPLE_SEC(tag))]] LS_SLOT_DECL(tag)          \
       LS_CAT2(ls_u__, __COUNTER__) = &(expr_lvalue);                           \
   }
 
@@ -392,7 +395,7 @@
 #define LINKER_SET_ADD_UNIQUE(tag, expr_lvalue)                                \
   LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   namespace {                                                                  \
-  [[gnu::used]] [[gnu::retain]] [[gnu::section("ls_" #tag)]] LS_SLOT_DEF(tag)  \
+  [[gnu::used]] [[gnu::retain]] [[gnu::section("ls_" #tag)]] LS_SLOT_DECL(tag) \
       LS_CAT2(ls_u__, __COUNTER__) = &(expr_lvalue);                           \
   }
 
@@ -408,7 +411,7 @@
   LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   __pragma(section(LS_MSVC_SEC(tag, m), LS_MSVC_SEC_PERMS));                   \
   LS_MSVC_USED                                                                 \
-  __declspec(allocate(LS_MSVC_SEC(tag, m))) inline LS_SLOT_DEF(tag)            \
+  __declspec(allocate(LS_MSVC_SEC(tag, m))) inline LS_SLOT_DECL(tag)           \
       LS_CAT4(ls_id_, tag, __, id) = &(expr_lvalue);                           \
   LS_MSVC_TOUCH_LOCAL(LS_CAT4(ls_id_, tag, __, id))
 
@@ -416,7 +419,7 @@
 
 #define LINKER_SET_ADD_ID(tag, id, expr_lvalue)                                \
   LS_STATIC_CHECK(tag, expr_lvalue)                                            \
-  [[gnu::used]] [[gnu::section(LS_APPLE_SEC(tag))]] inline LS_SLOT_DEF(tag)    \
+  [[gnu::used]] [[gnu::section(LS_APPLE_SEC(tag))]] inline LS_SLOT_DECL(tag)   \
       LS_CAT4(ls_id_, tag, __, id) = &(expr_lvalue);
 
 #else // ELF
@@ -426,7 +429,7 @@
 #define LINKER_SET_ADD_ID(tag, id, expr_lvalue)                                \
   LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   [[gnu::used]] [[gnu::retain]] [[gnu::section(                                \
-      "ls_" #tag)]] inline LS_SLOT_DEF(tag) LS_CAT4(ls_id_, tag, __, id) =     \
+      "ls_" #tag)]] inline LS_SLOT_DECL(tag) LS_CAT4(ls_id_, tag, __, id) =    \
       &(expr_lvalue);
 
 #else // GCC
@@ -459,8 +462,9 @@
   __pragma(section(LS_MSVC_SEC(tag, m), LS_MSVC_SEC_PERMS));                   \
   LS_MSVC_USED                                                                 \
   static auto& LS_CAT5(ls_id_, tag, __, id, _f)() {                            \
-    LS_MSVC_USED __declspec(allocate(LS_MSVC_SEC(tag, m))) static LS_SLOT_DEF( \
-        tag) ls_internal__ptr = &(expr_lvalue);                                \
+    LS_MSVC_USED                                                               \
+    __declspec(allocate(LS_MSVC_SEC(tag, m))) static LS_SLOT_DECL(tag)         \
+        ls_internal__ptr = &(expr_lvalue);                                     \
     return ls_internal__ptr;                                                   \
   }                                                                            \
   LS_MSVC_TOUCH_INTERNAL_PTR(tag, id)
@@ -474,7 +478,7 @@
   LS_STATIC_CHECK(tag, expr_lvalue)                                            \
   [[gnu::used]]                                                                \
   static auto& LS_CAT5(ls_id_, tag, __, id, _f)() {                            \
-    [[gnu::used]] [[gnu::section(LS_APPLE_SEC(tag))]] static LS_SLOT_DEF(tag)  \
+    [[gnu::used]] [[gnu::section(LS_APPLE_SEC(tag))]] static LS_SLOT_DECL(tag) \
         ls_internal__ptr = &(expr_lvalue);                                     \
     return ls_internal__ptr;                                                   \
   }                                                                            \
@@ -489,7 +493,7 @@
   [[gnu::used]]                                                                \
   static auto& LS_CAT5(ls_id_, tag, __, id, _f)() {                            \
     [[gnu::used]] [[gnu::retain]] [[gnu::section(                              \
-        "ls_" #tag)]] static LS_SLOT_DEF(tag) ls_internal__ptr =               \
+        "ls_" #tag)]] static LS_SLOT_DECL(tag) ls_internal__ptr =              \
         &(expr_lvalue);                                                        \
     return ls_internal__ptr;                                                   \
   }
@@ -528,7 +532,7 @@
 //------------------------------------------------------------------------------
 
 #define LINKER_SET_SPAN(tag)                                                   \
-  ([]() noexcept -> std::span<LS_SET_SLOT_PTR_TYPE(tag) const> {               \
+  ([]() noexcept -> std::span<LS_SLOT_TYPE(tag)> {                             \
     auto b = LS_BEGIN(tag);                                                    \
     auto e = LS_END(tag);                                                      \
     if(!b || e < b)                                                            \
@@ -541,7 +545,7 @@
 //------------------------------------------------------------------------------
 
 #define LINKER_SET_INDEXER(tag)                                                \
-  ([](LS_SET_SLOT_PTR_TYPE(tag) const& entry) noexcept -> std::size_t {        \
+  ([](LS_SLOT_TYPE(tag) & entry) noexcept -> std::size_t {                     \
     auto b = reinterpret_cast<std::uintptr_t>(LS_BEGIN(tag));                  \
     auto e = reinterpret_cast<std::uintptr_t>(&entry);                         \
     auto diff = e - b;                                                         \
@@ -560,18 +564,18 @@
 #define LINKER_SET_GET(tag, index)                                             \
   ([](std::size_t idx) noexcept -> decltype(auto) {                            \
     auto b = reinterpret_cast<std::uintptr_t>(LS_BEGIN(tag));                  \
-    auto addr = b + idx * sizeof(LS_SET_SLOT_PTR_TYPE(tag));                   \
-    return **reinterpret_cast<LS_SET_SLOT_PTR_TYPE(tag) const*>(addr);         \
+    auto addr = b + idx * sizeof(LS_SLOT_TYPE(tag));                           \
+    return **reinterpret_cast<LS_SLOT_TYPE(tag)*>(addr);                       \
   }(index))
 
 #define LINKER_SET_AT(tag, index)                                              \
   ([](std::size_t idx) -> decltype(auto) {                                     \
     auto b = reinterpret_cast<std::uintptr_t>(LS_BEGIN(tag));                  \
     auto e = reinterpret_cast<std::uintptr_t>(LS_END(tag));                    \
-    auto addr = b + idx * sizeof(LS_SET_SLOT_PTR_TYPE(tag));                   \
+    auto addr = b + idx * sizeof(LS_SLOT_TYPE(tag));                           \
     if(addr < b || addr >= e)                                                  \
       throw std::out_of_range("LINKER_SET_AT");                                \
-    return **reinterpret_cast<LS_SET_SLOT_PTR_TYPE(tag) const*>(addr);         \
+    return **reinterpret_cast<LS_SLOT_TYPE(tag)*>(addr);                       \
   }(index))
 
 //------------------------------------------------------------------------------
@@ -580,15 +584,13 @@
 
 namespace linker_set_detail {
 
-template <typename SlotPointer, std::atomic<std::size_t>* SizeCache>
+template <typename SlotType, std::atomic<std::size_t>* SizeCache>
 class range {
-  static constexpr std::uintptr_t step = sizeof(SlotPointer);
-
   std::uintptr_t first_ = 0;
   std::uintptr_t last_ = 0;
 
 public:
-  using element_type = std::remove_pointer_t<SlotPointer>;
+  using element_type = std::remove_pointer_t<SlotType>;
 
   constexpr range(std::uintptr_t first, std::uintptr_t last) noexcept {
     if(!first || last < first)
@@ -608,21 +610,21 @@ public:
 
     constexpr iterator() noexcept = default;
 
-    constexpr iterator(std::uintptr_t current, std::uintptr_t last) noexcept
-        : current_ {current}, last_ {last} {
+    constexpr iterator(std::uintptr_t cur, std::uintptr_t last) noexcept
+        : cur_ {cur}, last_ {last} {
       skip_null();
     }
 
     reference operator*() const noexcept {
-      return *load();
+      return **reinterpret_cast<SlotType*>(cur_);
     }
 
     pointer operator->() const noexcept {
-      return load();
+      return *reinterpret_cast<SlotType*>(cur_);
     }
 
     iterator& operator++() noexcept {
-      current_ += step;
+      cur_ += sizeof(SlotType);
       skip_null();
       return *this;
     }
@@ -634,21 +636,17 @@ public:
     }
 
     friend constexpr bool operator==(iterator a, iterator b) noexcept {
-      return a.current_ == b.current_;
+      return a.cur_ == b.cur_;
     }
 
   private:
-    std::uintptr_t current_ = 0;
+    std::uintptr_t cur_ = 0;
     std::uintptr_t last_ = 0;
-
-    pointer load() const noexcept {
-      return *reinterpret_cast<pointer const*>(current_);
-    }
 
     void skip_null() noexcept {
       if constexpr(SizeCache != nullptr) {
-        while(current_ < last_ && load() == nullptr)
-          current_ += step;
+        while(cur_ < last_ && *reinterpret_cast<SlotType*>(cur_) == nullptr)
+          cur_ += sizeof(SlotType);
       }
     }
   };
@@ -671,7 +669,7 @@ public:
       SizeCache->store(dist, std::memory_order_relaxed);
       return dist;
     } else {
-      return (last_ - first_) / step;
+      return (last_ - first_) / sizeof(SlotType);
     }
   }
 };
@@ -679,7 +677,7 @@ public:
 } // namespace linker_set_detail
 
 #define LINKER_SET_RANGE(tag)                                                  \
-  (::linker_set_detail::range<LS_SET_SLOT_PTR_TYPE(tag), LS_SIZE_CACHE(tag)>(  \
+  (::linker_set_detail::range<LS_SLOT_TYPE(tag), LS_SIZE_CACHE(tag)>(          \
       reinterpret_cast<std::uintptr_t>(LS_BEGIN(tag)),                         \
       reinterpret_cast<std::uintptr_t>(LS_END(tag))))
 
