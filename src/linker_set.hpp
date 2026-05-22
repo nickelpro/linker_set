@@ -87,9 +87,10 @@
 //
 //   * The indirect case: two constant objects with individual entries in the
 //     linker set are merged, becoming identity-identical. The linker set
-//     entries for these objects are now candidates for ICF themselves.
+//     entries for these objects are now candidates for constant merging or
+//     ICF themselves.
 //
-// Testing has only shown the former to be possible under GCC with
+// Testing has only shown both to be possible under GCC with
 // -fmerge-all-constants. No tested linker will perform the latter under any
 // optimization conditions.
 //------------------------------------------------------------------------------
