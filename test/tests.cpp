@@ -32,28 +32,28 @@ bool check_linker_set_contains(R ls, std::array<T, N> arr) {
 
 TEST_CASE("LINKER_SET_ADD_UNIQUE") {
   auto ls {LINKER_SET_RANGE(add_unique)};
-  REQUIRE(rg::distance(ls) == 4);
+  REQUIRE(rg::size(ls) == 4);
   REQUIRE(check_linker_set_contains(ls, std::array {1, 2, 3}));
   REQUIRE(rg::count_if(ls, [](auto i) { return i == 3; }) == 2);
 }
 
 TEST_CASE("LINKER_SET_ADD") {
   auto ls {LINKER_SET_RANGE(add_id)};
-  REQUIRE(rg::distance(ls) == 3);
+  REQUIRE(rg::size(ls) == 3);
   REQUIRE(check_linker_set_contains(ls, std::array {1, 2, 3}));
 }
 
 TEST_CASE("LINKER_SET_ADD_MEMBER") {
   auto ls {LINKER_SET_RANGE(add_member)};
-  REQUIRE(rg::distance(ls) == 3);
+  REQUIRE(rg::size(ls) == 3);
   REQUIRE(check_linker_set_contains(ls, std::array {1, 2, 3}));
 }
 
 TEST_CASE("LINKER_SET_DECLARE_MUTABLE") {
   auto ls {LINKER_SET_RANGE(add_mutable)};
   auto ls_idx {LINKER_SET_RANGE(add_mut_idx)};
-  REQUIRE(rg::distance(ls) == 2);
-  REQUIRE(rg::distance(ls_idx) == 2);
+  REQUIRE(rg::size(ls) == 2);
+  REQUIRE(rg::size(ls_idx) == 2);
   REQUIRE(check_linker_set_contains(ls, std::array {10, 20}));
 
   for(auto& value : ls)
@@ -82,13 +82,13 @@ TEST_CASE("LINKER_SET_DECLARE_MUTABLE") {
 
 TEST_CASE("Mixed LINKER_SET_ADD*") {
   auto ls {LINKER_SET_RANGE(add_mixed)};
-  REQUIRE(rg::distance(ls) == 4);
+  REQUIRE(rg::size(ls) == 4);
   REQUIRE(check_linker_set_contains(ls, std::array {1, 2, 3, 4}));
 }
 
 TEST_CASE("LINKER_SET_ADD_INDEX / MEMBER") {
   auto ls_idx {LINKER_SET_RANGE(add_idx)};
-  REQUIRE(rg::distance(ls_idx) == 3);
+  REQUIRE(rg::size(ls_idx) == 3);
   REQUIRE(rg::all_of(ls_idx, [](const auto& el) {
     return el.v == LINKER_SET_GET(add_mixed, el.idx);
   }));

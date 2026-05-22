@@ -45,9 +45,12 @@
 //     * cl.exe: best-effort "touch" in CRT$XCU to resist /Zc:inline and
 //     /OPT:REF.
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <limits>
+#include <ranges>
 #include <span>
 #include <stdexcept>
 #include <type_traits>
@@ -119,19 +122,16 @@
 #define LS_SET_SLOT_PTR_TYPE(tag) std::remove_cvref_t<decltype(ls_start_##tag)>
 #define LS_BEGIN(tag) (&ls_start_##tag + 1)
 #define LS_END(tag) (&ls_end_##tag)
-#define LS_HAS_HOLES true
 #elif LS_PLATFORM_APPLE
 #define LS_SET_SLOT_PTR_TYPE(tag)                                              \
   std::remove_cvref_t<std::remove_extent_t<decltype(ls_start_##tag)>>
 #define LS_BEGIN(tag) (ls_start_##tag)
 #define LS_END(tag) (ls_end_##tag)
-#define LS_HAS_HOLES false
 #else // ELF
 #define LS_SET_SLOT_PTR_TYPE(tag)                                              \
   std::remove_cvref_t<std::remove_extent_t<decltype(__start_ls_##tag)>>
 #define LS_BEGIN(tag) (__start_ls_##tag)
 #define LS_END(tag) (__stop_ls_##tag)
-#define LS_HAS_HOLES false
 #endif
 
 #define LS_SLOT_DEF(tag) constinit LS_SET_SLOT_PTR_TYPE(tag) LS_PTR_CONST
@@ -324,7 +324,11 @@
       nullptr;                                                                 \
   __declspec(allocate(LS_MSVC_SEC(tag, z))) inline ptr const ls_end_##tag =    \
       nullptr;                                                                 \
-  }
+  }                                                                            \
+  constinit inline std::atomic<std::size_t> ls_size_cache_##tag =              \
+      std::numeric_limits<std::size_t>::max();
+
+#define LS_SIZE_CACHE(tag) (&ls_size_cache_##tag)
 
 #elif LS_PLATFORM_APPLE
 
@@ -336,6 +340,8 @@
   extern ptr const ls_end_##tag[] __asm(LS_APPLE_ENDSYM(tag));                 \
   }
 
+#define LS_SIZE_CACHE(tag) nullptr
+
 #else // ELF
 
 #define LINKER_SET_DECLARE_IMPL(tag, ptr)                                      \
@@ -345,6 +351,8 @@
   [[gnu::weak]]                                                                \
   extern ptr const __stop_ls_##tag[];                                          \
   }
+
+#define LS_SIZE_CACHE(tag) nullptr
 
 #endif
 
@@ -572,10 +580,8 @@
 
 namespace linker_set_detail {
 
-template <class SlotPointer, bool SkipNull>
+template <typename SlotPointer, std::atomic<std::size_t>* SizeCache>
 class range {
-  static_assert(std::is_pointer_v<SlotPointer>);
-
   static constexpr std::uintptr_t step = sizeof(SlotPointer);
 
   std::uintptr_t first_ = 0;
@@ -640,7 +646,7 @@ public:
     }
 
     void skip_null() noexcept {
-      if constexpr(SkipNull) {
+      if constexpr(SizeCache != nullptr) {
         while(current_ < last_ && load() == nullptr)
           current_ += step;
       }
@@ -655,15 +661,25 @@ public:
     return {last_, last_};
   }
 
-  constexpr bool empty() const noexcept {
-    return first_ == last_;
+  constexpr std::size_t size() const noexcept {
+    if constexpr(SizeCache != nullptr) {
+      auto cached = SizeCache->load(std::memory_order_relaxed);
+      if(cached != std::numeric_limits<std::size_t>::max())
+        return cached;
+
+      auto dist = std::ranges::distance(begin(), end());
+      SizeCache->store(dist, std::memory_order_relaxed);
+      return dist;
+    } else {
+      return (last_ - first_) / step;
+    }
   }
 };
 
 } // namespace linker_set_detail
 
 #define LINKER_SET_RANGE(tag)                                                  \
-  (::linker_set_detail::range<LS_SET_SLOT_PTR_TYPE(tag), LS_HAS_HOLES>(        \
+  (::linker_set_detail::range<LS_SET_SLOT_PTR_TYPE(tag), LS_SIZE_CACHE(tag)>(  \
       reinterpret_cast<std::uintptr_t>(LS_BEGIN(tag)),                         \
       reinterpret_cast<std::uintptr_t>(LS_END(tag))))
 
