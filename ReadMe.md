@@ -118,8 +118,9 @@ LINKER_SET_AT(tag, index)
 
 - The `id` argument is only used for linker coalescing. No runtime metadata is
   stored for it.
-- On MSVC, linker sets can contain null holes, especially with incremental
-  linking. `LINKER_SET_RANGE` skips those holes while iterating.
+- Linker sets can contain null holes. `LINKER_SET_RANGE` skips those holes
+  while iterating and reports the logical size. Known examples are MSVC
+  incremental linking and ASAN-instrumented Mach-O.
 
 ## Build / Install
 This repo builds provides a CMake interface library. There is a ready-made

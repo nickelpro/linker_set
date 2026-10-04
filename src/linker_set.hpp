@@ -38,7 +38,8 @@
 //
 // Notes:
 // - No metadata is stored; the identifier exists only for linker coalescing.
-// - Set may contain holes on MSVC, especially with incremental linking.
+// - Set may contain holes; known examples are MSVC incremental linking and
+//   ASAN-instrumented Mach-O.
 // - ELF uses [[gnu::retain]] to survive --gc-sections.
 // - Windows:
 //     * clang-cl: uses [[gnu::used]] on COFF to keep entries.
@@ -67,6 +68,24 @@
 #define LS_PLATFORM_APPLE 1
 #else
 #define LS_PLATFORM_ELF 1
+#endif
+
+#if defined(__clang__)
+#define LS_ASAN_ENABLED __has_feature(address_sanitizer)
+#elif defined(__SANITIZE_ADDRESS__)
+#define LS_ASAN_ENABLED 1
+#else
+#define LS_ASAN_ENABLED 0
+#endif
+
+#if LS_PLATFORM_MSVC || LS_ASAN_ENABLED
+#define LS_DECLARE_SIZE_CACHE(tag)                                             \
+  constinit inline std::atomic<std::size_t> ls_size_cache_##tag =              \
+      std::numeric_limits<std::size_t>::max();
+#define LS_SIZE_CACHE(tag) (&ls_size_cache_##tag)
+#else
+#define LS_DECLARE_SIZE_CACHE(tag)
+#define LS_SIZE_CACHE(tag) nullptr
 #endif
 
 #define LS_STR_(x) #x
@@ -328,10 +347,7 @@
   __declspec(allocate(LS_MSVC_SEC(tag, z))) inline ptr const ls_end_##tag =    \
       nullptr;                                                                 \
   }                                                                            \
-  constinit inline std::atomic<std::size_t> ls_size_cache_##tag =              \
-      std::numeric_limits<std::size_t>::max();
-
-#define LS_SIZE_CACHE(tag) (&ls_size_cache_##tag)
+  LS_DECLARE_SIZE_CACHE(tag)
 
 #elif LS_PLATFORM_APPLE
 
@@ -341,9 +357,8 @@
   extern ptr const ls_start_##tag[] __asm(LS_APPLE_STARTSYM(tag));             \
   [[gnu::weak]]                                                                \
   extern ptr const ls_end_##tag[] __asm(LS_APPLE_ENDSYM(tag));                 \
-  }
-
-#define LS_SIZE_CACHE(tag) nullptr
+  }                                                                            \
+  LS_DECLARE_SIZE_CACHE(tag)
 
 #else // ELF
 
@@ -353,9 +368,8 @@
   extern ptr const __start_ls_##tag[];                                         \
   [[gnu::weak]]                                                                \
   extern ptr const __stop_ls_##tag[];                                          \
-  }
-
-#define LS_SIZE_CACHE(tag) nullptr
+  }                                                                            \
+  LS_DECLARE_SIZE_CACHE(tag)
 
 #endif
 
@@ -643,6 +657,9 @@ public:
     std::uintptr_t cur_ = 0;
     std::uintptr_t last_ = 0;
 
+#if defined(__clang__) || defined(__GNUC__)
+    __attribute__((no_sanitize("address")))
+#endif
     void skip_null() noexcept {
       if constexpr(SizeCache != nullptr) {
         while(cur_ < last_ && *reinterpret_cast<SlotType*>(cur_) == nullptr)
